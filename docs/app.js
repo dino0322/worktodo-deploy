@@ -649,6 +649,13 @@ function makeDemoApi() {
     async updateProfile(profile) {
       const data = readDemo();
       data.users = data.users.map((user) => user.id === data.sessionUserId ? { ...user, ...profile } : user);
+      if (data.sessionUserId === state.user?.id) {
+        state.user = {
+          ...state.user,
+          email: profile.email || state.user.email,
+          name: profile.full_name || state.user.name
+        };
+      }
       writeDemo(data);
     },
     async createInvite(invite) {
@@ -852,11 +859,13 @@ function makeLiveApi() {
     },
     async load() {
       const user = state.user;
-      await supabaseClient.from("profiles").upsert({
-        id: user.id,
-        email: user.email,
-        full_name: user.name || user.email
-      });
+      await supabaseClient
+        .from("profiles")
+        .upsert({
+          id: user.id,
+          email: user.email,
+          full_name: user.name || user.email
+        }, { onConflict: "id", ignoreDuplicates: true });
 
       let { data: memberships, error: memberError } = await supabaseClient
         .from("workspace_members")
@@ -983,11 +992,26 @@ function makeLiveApi() {
       if (error) throw error;
     },
     async updateProfile(profile) {
+      const nextEmail = profile.email?.trim();
+      const nextName = profile.full_name?.trim();
+      if (nextEmail && nextEmail !== state.user.email) {
+        const { error: authEmailError } = await supabaseClient.auth.updateUser({ email: nextEmail });
+        if (authEmailError) throw authEmailError;
+      }
+      if (nextName && nextName !== state.user.name) {
+        const { error: authMetaError } = await supabaseClient.auth.updateUser({ data: { full_name: nextName } });
+        if (authMetaError) throw authMetaError;
+      }
       const { error } = await supabaseClient
         .from("profiles")
         .update(profile)
         .eq("id", state.user.id);
       if (error) throw error;
+      state.user = {
+        ...state.user,
+        email: nextEmail || state.user.email,
+        name: nextName || state.user.name
+      };
     },
     async createInvite(invite) {
       const { data, error } = await supabaseClient
@@ -1862,13 +1886,44 @@ function renderProfileEditModal() {
   const profile = currentProfile();
   return `
     <div class="modal-overlay" data-action="close-profile-edit">
-      <section class="modal-card pop-card" role="dialog" aria-modal="true" aria-labelledby="profileEditTitle">
+      <section class="modal-card pop-card profile-edit-card" role="dialog" aria-modal="true" aria-labelledby="profileEditTitle">
         <button class="modal-close" type="button" data-action="close-profile-edit" aria-label="닫기">×</button>
-        <h2 id="profileEditTitle">내 정보 수정</h2>
-        <form class="form" data-profile-edit-form>
-          <input class="input" name="full_name" placeholder="이름" value="${escapeHtml(profile.full_name || "")}" required>
-          <input class="input" name="avatar_url" placeholder="프로필 이미지 URL" value="${escapeHtml(profile.avatar_url || "")}">
-          <button class="btn primary">수정 저장</button>
+        <div class="profile-edit-head">
+          ${renderAvatar(state.user.id, "large")}
+          <div>
+            <h2 id="profileEditTitle">내 정보 수정</h2>
+            <p class="muted">${escapeHtml(profile.email || state.user.email || "-")}</p>
+          </div>
+        </div>
+        <form class="profile-edit-form" data-profile-edit-form>
+          <div class="settings-list edit-list">
+            <label class="settings-row editable">
+              <span class="settings-label">이름</span>
+              <input class="settings-input" name="full_name" value="${escapeHtml(profile.full_name || "")}" required>
+            </label>
+            <label class="settings-row editable">
+              <span class="settings-label">이메일</span>
+              <input class="settings-input" type="email" name="email" value="${escapeHtml(profile.email || state.user.email || "")}" required>
+            </label>
+            <label class="settings-row editable">
+              <span class="settings-label">프로필 이미지</span>
+              <input class="settings-input" name="avatar_url" placeholder="https://..." value="${escapeHtml(profile.avatar_url || "")}">
+            </label>
+          </div>
+          <div class="settings-list locked-list">
+            <div class="settings-row locked">
+              <span class="settings-label">직책/직무</span>
+              <span class="settings-value">${escapeHtml(profile.position || "관리자가 지정")}</span>
+            </div>
+            <div class="settings-row locked">
+              <span class="settings-label">팀 역할</span>
+              <span class="settings-value">${escapeHtml(ROLE_LABEL[state.role] || state.role)}</span>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="btn ghost" type="button" data-action="cancel-profile-edit">취소</button>
+            <button class="btn primary">저장</button>
+          </div>
         </form>
       </section>
     </div>
@@ -2051,28 +2106,72 @@ function renderInlineReply(reply) {
 function renderProfile() {
   const profile = currentProfile();
   const member = memberRecord(state.user.id);
+  const email = profile.email || state.user.email || "-";
+  const roleLabel = ROLE_LABEL[state.role] || state.role;
+  const statusLabel = MEMBER_STATUS_LABEL[member?.status] || member?.status || "-";
   return `
-    ${renderHead("내 정보", "현재 로그인한 계정 정보와 권한을 확인하고 수정합니다.", `<button class="btn primary" data-action="open-profile-edit">수정</button>`)}
-    <section class="card profile-card">
-      <div class="profile-summary">
-        ${renderAvatar(state.user.id, "large")}
-        <div>
-          <h2>${escapeHtml(profile.full_name || profile.email || "사용자")}</h2>
-          <p class="muted">${escapeHtml(profile.email || state.user.email || "-")}</p>
+    ${renderHead("내 정보", "계정 정보와 현재 팀 권한을 확인합니다.")}
+    <section class="profile-page">
+      <div class="profile-hero">
+        <div class="profile-identity">
+          ${renderAvatar(state.user.id, "large")}
+          <div>
+            <h2>${escapeHtml(profile.full_name || email)}</h2>
+            <p>${escapeHtml(email)}</p>
+          </div>
         </div>
+        <button class="btn primary" data-action="open-profile-edit">수정</button>
       </div>
-      <h2>프로필</h2>
-      <table class="table">
-        <tbody>
-          <tr><th>이름</th><td>${escapeHtml(profile.full_name || "-")}</td></tr>
-          <tr><th>이메일</th><td>${escapeHtml(profile.email || state.user.email || "-")}</td></tr>
-          <tr><th>직책/직무</th><td>${escapeHtml(profile.position || "-")}</td></tr>
-          <tr><th>역할</th><td>${escapeHtml(ROLE_LABEL[state.role] || state.role)}</td></tr>
-          <tr><th>상태</th><td>${escapeHtml(MEMBER_STATUS_LABEL[member?.status] || member?.status || "-")}</td></tr>
-          <tr><th>워크스페이스</th><td>${escapeHtml(state.workspace?.name || "-")}</td></tr>
-          <tr><th>저장 방식</th><td>${state.mode === "live" ? "Supabase DB" : "브라우저 데모 저장"}</td></tr>
-        </tbody>
-      </table>
+
+      <section class="settings-section">
+        <h2>계정</h2>
+        <div class="settings-list">
+          <div class="settings-row">
+            <span class="settings-label">이름</span>
+            <span class="settings-value">${escapeHtml(profile.full_name || "-")}</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">이메일</span>
+            <span class="settings-value">${escapeHtml(email)}</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">프로필 이미지</span>
+            <span class="settings-value">${profile.avatar_url ? "설정됨" : "기본 아바타"}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>팀</h2>
+        <div class="settings-list">
+          <div class="settings-row">
+            <span class="settings-label">직책/직무</span>
+            <span class="settings-value">${escapeHtml(profile.position || "-")}</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">역할</span>
+            <span class="settings-value with-badge">${roleBadge(state.role)}${escapeHtml(roleLabel)}</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">상태</span>
+            <span class="settings-value"><span class="status-pill ${escapeHtml(member?.status || "disabled")}">${escapeHtml(statusLabel)}</span></span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">팀</span>
+            <span class="settings-value">${escapeHtml(state.workspace?.name || "-")}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>저장</h2>
+        <div class="settings-list">
+          <div class="settings-row">
+            <span class="settings-label">저장 방식</span>
+            <span class="settings-value">${state.mode === "live" ? "Supabase DB" : "브라우저 데모 저장"}</span>
+          </div>
+        </div>
+      </section>
     </section>
   `;
 }
@@ -2232,6 +2331,11 @@ function bindEvents() {
       state.profileEditOpen = false;
       render();
     });
+  });
+
+  document.querySelector("[data-action='cancel-profile-edit']")?.addEventListener("click", () => {
+    state.profileEditOpen = false;
+    render();
   });
 
   document.querySelector("[data-action='open-profile-edit']")?.addEventListener("click", () => {
@@ -2600,6 +2704,7 @@ async function handleProfileEditSubmit(event) {
   try {
     await api.updateProfile({
       full_name: form.get("full_name")?.toString().trim(),
+      email: form.get("email")?.toString().trim(),
       avatar_url: form.get("avatar_url")?.toString().trim()
     });
     state.profileEditOpen = false;

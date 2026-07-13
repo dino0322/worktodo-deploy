@@ -1287,22 +1287,146 @@ textarea:focus {
 }
 
 .admin-card,
-.invite-card,
-.profile-card {
+.invite-card {
   overflow: hidden;
 }
 
-.profile-summary {
+.profile-page {
+  display: grid;
+  gap: 18px;
+  max-width: 920px;
+}
+
+.profile-hero {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.profile-identity,
+.profile-edit-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.profile-identity h2,
+.profile-edit-head h2 {
+  margin: 0 0 4px;
+}
+
+.profile-identity p,
+.profile-edit-head p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.settings-section {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-section h2 {
+  margin: 0;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.settings-list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.36fr) minmax(0, 1fr);
   gap: 14px;
-  margin-bottom: 18px;
-  padding-bottom: 16px;
+  align-items: center;
+  min-height: 54px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--line);
 }
 
-.profile-summary h2 {
-  margin: 0 0 4px;
+.settings-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.settings-value {
+  min-width: 0;
+  color: var(--text);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.settings-value.with-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-row.editable {
+  cursor: text;
+}
+
+.settings-input {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+  font-weight: 700;
+}
+
+.settings-input::placeholder {
+  color: var(--muted);
+}
+
+.settings-row.locked {
+  background: color-mix(in srgb, var(--surface-2) 54%, var(--surface));
+}
+
+.profile-edit-card {
+  width: min(620px, 100%);
+}
+
+.profile-edit-head {
+  margin-bottom: 18px;
+  padding-right: 42px;
+}
+
+.profile-edit-form {
+  display: grid;
+  gap: 12px;
+}
+
+.locked-list {
+  opacity: 0.86;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .member-table tr.context-enabled {
@@ -1554,6 +1678,23 @@ textarea:focus {
 
   .workspace-picker {
     width: 100%;
+  }
+
+  .profile-hero,
+  .profile-identity,
+  .profile-edit-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .settings-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .modal-actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .auth-page {
