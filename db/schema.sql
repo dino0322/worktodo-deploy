@@ -75,11 +75,36 @@ create table if not exists public.notices (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.questions (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  author_id uuid not null references public.profiles(id) on delete cascade,
+  title text not null,
+  body text not null,
+  status text not null default 'open' check (status in ('open', 'answered')),
+  replies jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.messages (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  sender_id uuid not null references public.profiles(id) on delete cascade,
+  body text not null,
+  is_private boolean not null default false,
+  replies jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create index if not exists workspace_members_user_idx on public.workspace_members(user_id);
 create index if not exists tasks_workspace_idx on public.tasks(workspace_id);
 create index if not exists tasks_assignee_idx on public.tasks(assignee_id);
 create index if not exists task_comments_task_idx on public.task_comments(task_id);
 create index if not exists notices_workspace_idx on public.notices(workspace_id);
+create index if not exists questions_workspace_idx on public.questions(workspace_id);
+create index if not exists messages_workspace_idx on public.messages(workspace_id);
 
 alter table public.profiles enable row level security;
 alter table public.workspaces enable row level security;
@@ -88,6 +113,8 @@ alter table public.projects enable row level security;
 alter table public.tasks enable row level security;
 alter table public.task_comments enable row level security;
 alter table public.notices enable row level security;
+alter table public.questions enable row level security;
+alter table public.messages enable row level security;
 
 create or replace function public.is_workspace_member(target_workspace_id uuid)
 returns boolean
@@ -283,6 +310,57 @@ using (public.is_workspace_member(workspace_id));
 drop policy if exists "notices write managers" on public.notices;
 create policy "notices write managers"
 on public.notices for all
+to authenticated
+using (public.is_workspace_manager(workspace_id))
+with check (public.is_workspace_manager(workspace_id));
+
+drop policy if exists "questions read members" on public.questions;
+create policy "questions read members"
+on public.questions for select
+to authenticated
+using (public.is_workspace_member(workspace_id));
+
+drop policy if exists "questions create members" on public.questions;
+create policy "questions create members"
+on public.questions for insert
+to authenticated
+with check (
+  public.is_workspace_member(workspace_id)
+  and author_id = auth.uid()
+);
+
+drop policy if exists "questions update managers" on public.questions;
+create policy "questions update managers"
+on public.questions for update
+to authenticated
+using (public.is_workspace_manager(workspace_id))
+with check (public.is_workspace_manager(workspace_id));
+
+drop policy if exists "messages read visible" on public.messages;
+create policy "messages read visible"
+on public.messages for select
+to authenticated
+using (
+  public.is_workspace_member(workspace_id)
+  and (
+    sender_id = auth.uid()
+    or public.is_workspace_manager(workspace_id)
+    or is_private = false
+  )
+);
+
+drop policy if exists "messages create members" on public.messages;
+create policy "messages create members"
+on public.messages for insert
+to authenticated
+with check (
+  public.is_workspace_member(workspace_id)
+  and sender_id = auth.uid()
+);
+
+drop policy if exists "messages update managers" on public.messages;
+create policy "messages update managers"
+on public.messages for update
 to authenticated
 using (public.is_workspace_manager(workspace_id))
 with check (public.is_workspace_manager(workspace_id));

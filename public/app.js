@@ -39,6 +39,8 @@ let state = {
   tasks: [],
   comments: [],
   notices: [],
+  questions: [],
+  messages: [],
   view: "mine",
   filters: {
     search: "",
@@ -175,6 +177,45 @@ function readDemo() {
       }
     ],
     comments: [],
+    questions: [
+      {
+        id: uid(),
+        workspace_id: workspaceId,
+        author_id: minjiId,
+        title: "배포 전 DB 연결은 누가 확인하나요?",
+        body: "Supabase schema 실행과 GitHub Pages 배포 후 데모/DB 모드 전환 확인 담당자가 필요합니다.",
+        status: "open",
+        replies: [
+          {
+            id: uid(),
+            author_id: hyunId,
+            body: "제가 Supabase 쪽을 보고, 팀장님이 Pages 설정을 최종 확인하는 흐름으로 가면 좋겠습니다.",
+            created_at: new Date().toISOString()
+          }
+        ],
+        created_at: new Date().toISOString()
+      }
+    ],
+    messages: [
+      {
+        id: uid(),
+        workspace_id: workspaceId,
+        sender_id: minjiId,
+        body: "제 개인 업무 중 일부를 팀 업무로 바꿔도 될까요?",
+        is_private: false,
+        replies: [],
+        created_at: new Date().toISOString()
+      },
+      {
+        id: uid(),
+        workspace_id: workspaceId,
+        sender_id: hyunId,
+        body: "배포 권한 관련해서 팀장님과 따로 확인하고 싶습니다.",
+        is_private: true,
+        replies: [],
+        created_at: new Date().toISOString()
+      }
+    ],
     notices: [
       {
         id: uid(),
@@ -235,7 +276,9 @@ function makeDemoApi() {
         projects: data.projects,
         tasks: data.tasks,
         comments: data.comments,
-        notices: data.notices
+        notices: data.notices,
+        questions: data.questions || [],
+        messages: data.messages || []
       };
     },
     async createTask(task) {
@@ -283,6 +326,62 @@ function makeDemoApi() {
       data.notices.unshift(record);
       writeDemo(data);
       return record;
+    },
+    async createQuestion(question) {
+      const data = readDemo();
+      const record = {
+        ...question,
+        id: uid(),
+        workspace_id: data.workspace.id,
+        author_id: data.sessionUserId,
+        status: "open",
+        replies: [],
+        created_at: new Date().toISOString()
+      };
+      data.questions = [record, ...(data.questions || [])];
+      writeDemo(data);
+      return record;
+    },
+    async replyQuestion(questionId, body) {
+      const data = readDemo();
+      data.questions = (data.questions || []).map((question) => question.id === questionId
+        ? {
+            ...question,
+            status: "answered",
+            replies: [
+              ...(question.replies || []),
+              { id: uid(), author_id: data.sessionUserId, body, created_at: new Date().toISOString() }
+            ]
+          }
+        : question);
+      writeDemo(data);
+    },
+    async createMessage(message) {
+      const data = readDemo();
+      const record = {
+        ...message,
+        id: uid(),
+        workspace_id: data.workspace.id,
+        sender_id: data.sessionUserId,
+        replies: [],
+        created_at: new Date().toISOString()
+      };
+      data.messages = [record, ...(data.messages || [])];
+      writeDemo(data);
+      return record;
+    },
+    async replyMessage(messageId, body) {
+      const data = readDemo();
+      data.messages = (data.messages || []).map((message) => message.id === messageId
+        ? {
+            ...message,
+            replies: [
+              ...(message.replies || []),
+              { id: uid(), author_id: data.sessionUserId, body, created_at: new Date().toISOString() }
+            ]
+          }
+        : message);
+      writeDemo(data);
     }
   };
 }
@@ -371,16 +470,20 @@ function makeLiveApi() {
         projectsResult,
         tasksResult,
         commentsResult,
-        noticesResult
+        noticesResult,
+        questionsResult,
+        messagesResult
       ] = await Promise.all([
         supabaseClient.from("workspace_members").select("*").eq("workspace_id", workspace.id).eq("status", "active"),
         supabaseClient.from("projects").select("*").eq("workspace_id", workspace.id).order("created_at", { ascending: true }),
         supabaseClient.from("tasks").select("*").eq("workspace_id", workspace.id).is("archived_at", null).order("created_at", { ascending: false }),
         supabaseClient.from("task_comments").select("*").order("created_at", { ascending: true }),
-        supabaseClient.from("notices").select("*").eq("workspace_id", workspace.id).order("created_at", { ascending: false })
+        supabaseClient.from("notices").select("*").eq("workspace_id", workspace.id).order("created_at", { ascending: false }),
+        supabaseClient.from("questions").select("*").eq("workspace_id", workspace.id).order("created_at", { ascending: false }),
+        supabaseClient.from("messages").select("*").eq("workspace_id", workspace.id).order("created_at", { ascending: false })
       ]);
 
-      for (const result of [membersResult, projectsResult, tasksResult, commentsResult, noticesResult]) {
+      for (const result of [membersResult, projectsResult, tasksResult, commentsResult, noticesResult, questionsResult, messagesResult]) {
         if (result.error) throw result.error;
       }
 
@@ -398,7 +501,9 @@ function makeLiveApi() {
         projects: projectsResult.data || [],
         tasks: tasksResult.data || [],
         comments: commentsResult.data || [],
-        notices: noticesResult.data || []
+        notices: noticesResult.data || [],
+        questions: (questionsResult.data || []).map((question) => ({ ...question, replies: question.replies || [] })),
+        messages: (messagesResult.data || []).map((message) => ({ ...message, replies: message.replies || [] }))
       };
     },
     async createTask(task) {
@@ -445,6 +550,59 @@ function makeLiveApi() {
         .single();
       if (error) throw error;
       return data;
+    },
+    async createQuestion(question) {
+      const { data, error } = await supabaseClient
+        .from("questions")
+        .insert({
+          ...question,
+          workspace_id: state.workspace.id,
+          author_id: state.user.id,
+          status: "open",
+          replies: []
+        })
+        .select("*")
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    async replyQuestion(questionId, body) {
+      const question = state.questions.find((item) => item.id === questionId);
+      const replies = [
+        ...(question?.replies || []),
+        { id: uid(), author_id: state.user.id, body, created_at: new Date().toISOString() }
+      ];
+      const { error } = await supabaseClient
+        .from("questions")
+        .update({ replies, status: "answered" })
+        .eq("id", questionId);
+      if (error) throw error;
+    },
+    async createMessage(message) {
+      const { data, error } = await supabaseClient
+        .from("messages")
+        .insert({
+          ...message,
+          workspace_id: state.workspace.id,
+          sender_id: state.user.id,
+          replies: []
+        })
+        .select("*")
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    async replyMessage(messageId, body) {
+      const message = state.messages.find((item) => item.id === messageId);
+      const replies = [
+        ...(message?.replies || []),
+        { id: uid(), author_id: state.user.id, body, created_at: new Date().toISOString() }
+      ];
+      const { error } = await supabaseClient
+        .from("messages")
+        .update({ replies })
+        .eq("id", messageId);
+      if (error) throw error;
     }
   };
 }
@@ -497,8 +655,19 @@ function stats() {
     mine: myTasks.filter((task) => task.status !== "done").length,
     dueToday: state.tasks.filter((task) => task.due_date === today() && task.status !== "done").length,
     overdue: state.tasks.filter(isOverdue).length,
-    review: state.tasks.filter((task) => task.status === "review").length
+    review: state.tasks.filter((task) => task.status === "review").length,
+    openQuestions: state.questions.filter((question) => question.status !== "answered").length,
+    privateMessages: state.messages.filter((message) => message.is_private).length
   };
+}
+
+function isManager() {
+  return ["admin", "manager"].includes(state.role);
+}
+
+function visibleMessages() {
+  if (isManager()) return state.messages;
+  return state.messages.filter((message) => message.sender_id === state.user?.id);
 }
 
 function render() {
@@ -507,7 +676,6 @@ function render() {
     return;
   }
   const profile = currentProfile();
-  const isManager = ["admin", "manager"].includes(state.role);
   app.innerHTML = `
     <div class="app-shell">
       <header class="topbar">
@@ -527,8 +695,11 @@ function render() {
           ${navButton("mine", "내 업무")}
           ${navButton("team", "팀 업무")}
           ${navButton("board", "보드")}
-          ${navButton("dashboard", "대시보드", !isManager)}
+          ${navButton("dashboard", "대시보드", !isManager())}
           ${navButton("notices", "공지")}
+          ${navButton("questions", "질문")}
+          ${navButton("messages", "메시지")}
+          ${navButton("profile", "내 정보")}
           <div class="side-panel">
             <h3>빠른 안내</h3>
             <p>${state.mode === "live"
@@ -553,6 +724,9 @@ function renderPage() {
   if (state.view === "board") return renderBoard();
   if (state.view === "dashboard") return renderDashboard();
   if (state.view === "notices") return renderNotices();
+  if (state.view === "questions") return renderQuestions();
+  if (state.view === "messages") return renderMessages();
+  if (state.view === "profile") return renderProfile();
   return renderTaskList(state.view);
 }
 
@@ -724,6 +898,7 @@ function renderBoard() {
 
 function renderDashboard() {
   const tasks = filteredTasks("dashboard");
+  const data = stats();
   const rows = state.profiles.map((profile) => {
     const assigned = state.tasks.filter((task) => task.assignee_id === profile.id && task.status !== "done");
     return {
@@ -736,6 +911,12 @@ function renderDashboard() {
   return `
     ${renderHead("팀 대시보드", "매니저와 관리자가 팀 전체 진행 상황을 확인합니다.")}
     ${renderStats()}
+    <div class="grid stats">
+      <div class="stat-card"><span>답변대기 질문</span><strong>${data.openQuestions}</strong></div>
+      <div class="stat-card"><span>비공개 메시지</span><strong>${data.privateMessages}</strong></div>
+      <div class="stat-card"><span>팀원</span><strong>${state.profiles.length}</strong></div>
+      <div class="stat-card"><span>공지</span><strong>${state.notices.length}</strong></div>
+    </div>
     <div class="content-grid">
       <section class="card">
         <h2>지연 및 진행 업무</h2>
@@ -774,7 +955,7 @@ function renderDashboard() {
 }
 
 function renderNotices() {
-  const canWrite = ["admin", "manager"].includes(state.role);
+  const canWrite = isManager();
   return `
     ${renderHead("공지", "팀 전체에 공유할 운영 메시지와 배포 안내를 남깁니다.")}
     <div class="content-grid">
@@ -800,6 +981,124 @@ function renderNotices() {
         </form>
       </aside>
     </div>
+  `;
+}
+
+function renderQuestions() {
+  return `
+    ${renderHead("질문", "업무 진행 중 생긴 질문을 남기고, 매니저가 답변합니다.")}
+    <div class="content-grid">
+      <section class="list">
+        ${state.questions.length ? state.questions.map(renderQuestionCard).join("") : `<div class="empty">아직 질문이 없습니다.</div>`}
+      </section>
+      <aside class="card">
+        <h2>질문 작성</h2>
+        <form class="form" data-question-form>
+          <input class="input" name="title" placeholder="질문 제목" required>
+          <textarea name="body" placeholder="질문 내용을 적어주세요" required></textarea>
+          <button class="btn primary">질문 등록</button>
+        </form>
+      </aside>
+    </div>
+  `;
+}
+
+function renderQuestionCard(question) {
+  const replies = question.replies || [];
+  return `
+    <article class="task-card">
+      <div class="task-top">
+        <div>
+          <h2 class="task-title">${escapeHtml(question.title)}</h2>
+          <p class="task-desc">${escapeHtml(question.body)}</p>
+        </div>
+        <span class="pill ${question.status === "answered" ? "low" : "normal"}">${question.status === "answered" ? "답변완료" : "답변대기"}</span>
+      </div>
+      <div class="task-meta">
+        <span class="pill">${escapeHtml(profileName(question.author_id))}</span>
+      </div>
+      <div class="comment-list">
+        ${replies.length ? replies.map(renderInlineReply).join("") : `<div class="muted">아직 답변이 없습니다.</div>`}
+        <form class="form ${isManager() ? "" : "hidden"}" data-question-reply-form="${question.id}">
+          <input class="input" name="body" placeholder="답변을 입력하세요" required>
+          <button class="btn">답변 저장</button>
+        </form>
+      </div>
+    </article>
+  `;
+}
+
+function renderMessages() {
+  const messages = visibleMessages();
+  return `
+    ${renderHead("메시지", "개인 상담이나 운영자에게만 보낼 내용을 남깁니다. 비공개 메시지는 작성자와 매니저만 볼 수 있습니다.")}
+    <div class="content-grid">
+      <section class="list">
+        ${messages.length ? messages.map(renderMessageCard).join("") : `<div class="empty">표시할 메시지가 없습니다.</div>`}
+      </section>
+      <aside class="card">
+        <h2>메시지 작성</h2>
+        <form class="form" data-message-form>
+          <textarea name="body" placeholder="메시지 내용을 입력하세요" required></textarea>
+          <label><input type="checkbox" name="is_private"> 비공개로 보내기</label>
+          <button class="btn primary">메시지 저장</button>
+        </form>
+      </aside>
+    </div>
+  `;
+}
+
+function renderMessageCard(message) {
+  const replies = message.replies || [];
+  const canReply = isManager();
+  return `
+    <article class="task-card">
+      <div class="task-top">
+        <div>
+          <h2 class="task-title">${message.is_private ? "비공개 메시지" : "공개 메시지"}</h2>
+          <p class="task-desc">${escapeHtml(message.body)}</p>
+        </div>
+        <span class="pill ${message.is_private ? "high" : "low"}">${message.is_private ? "비공개" : "공개"}</span>
+      </div>
+      <div class="task-meta">
+        <span class="pill">작성 ${escapeHtml(profileName(message.sender_id))}</span>
+      </div>
+      <div class="comment-list">
+        ${replies.length ? replies.map(renderInlineReply).join("") : `<div class="muted">아직 답장이 없습니다.</div>`}
+        <form class="form ${canReply ? "" : "hidden"}" data-message-reply-form="${message.id}">
+          <input class="input" name="body" placeholder="답장을 입력하세요" required>
+          <button class="btn">답장 저장</button>
+        </form>
+      </div>
+    </article>
+  `;
+}
+
+function renderInlineReply(reply) {
+  return `
+    <div class="comment">
+      <strong>${escapeHtml(profileName(reply.author_id))}</strong>
+      <span>${escapeHtml(reply.body)}</span>
+    </div>
+  `;
+}
+
+function renderProfile() {
+  const profile = currentProfile();
+  return `
+    ${renderHead("내 정보", "현재 로그인한 계정 정보와 권한을 확인합니다.")}
+    <section class="card">
+      <h2>프로필</h2>
+      <table class="table">
+        <tbody>
+          <tr><th>이름</th><td>${escapeHtml(profile.full_name || "-")}</td></tr>
+          <tr><th>이메일</th><td>${escapeHtml(profile.email || state.user.email || "-")}</td></tr>
+          <tr><th>역할</th><td>${escapeHtml(ROLE_LABEL[state.role] || state.role)}</td></tr>
+          <tr><th>워크스페이스</th><td>${escapeHtml(state.workspace?.name || "-")}</td></tr>
+          <tr><th>저장 방식</th><td>${state.mode === "live" ? "Supabase DB" : "브라우저 데모 저장"}</td></tr>
+        </tbody>
+      </table>
+    </section>
   `;
 }
 
@@ -865,6 +1164,8 @@ function bindEvents() {
 
   document.querySelector("[data-task-form]")?.addEventListener("submit", handleTaskSubmit);
   document.querySelector("[data-notice-form]")?.addEventListener("submit", handleNoticeSubmit);
+  document.querySelector("[data-question-form]")?.addEventListener("submit", handleQuestionSubmit);
+  document.querySelector("[data-message-form]")?.addEventListener("submit", handleMessageSubmit);
 
   document.querySelectorAll("[data-task-status]").forEach((select) => {
     select.addEventListener("change", async () => {
@@ -887,6 +1188,14 @@ function bindEvents() {
 
   document.querySelectorAll("[data-comment-form]").forEach((form) => {
     form.addEventListener("submit", handleCommentSubmit);
+  });
+
+  document.querySelectorAll("[data-question-reply-form]").forEach((form) => {
+    form.addEventListener("submit", handleQuestionReplySubmit);
+  });
+
+  document.querySelectorAll("[data-message-reply-form]").forEach((form) => {
+    form.addEventListener("submit", handleMessageReplySubmit);
   });
 }
 
@@ -964,6 +1273,64 @@ async function handleNoticeSubmit(event) {
     toast("공지를 저장했습니다.");
   } catch (error) {
     toast(error.message || "공지 저장에 실패했습니다.");
+  }
+}
+
+async function handleQuestionSubmit(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  try {
+    await api.createQuestion({
+      title: form.get("title")?.toString().trim(),
+      body: form.get("body")?.toString().trim()
+    });
+    await refreshData();
+    render();
+    toast("질문을 등록했습니다.");
+  } catch (error) {
+    toast(error.message || "질문 등록에 실패했습니다.");
+  }
+}
+
+async function handleQuestionReplySubmit(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  try {
+    await api.replyQuestion(event.currentTarget.dataset.questionReplyForm, form.get("body")?.toString().trim());
+    await refreshData();
+    render();
+    toast("답변을 저장했습니다.");
+  } catch (error) {
+    toast(error.message || "답변 저장에 실패했습니다.");
+  }
+}
+
+async function handleMessageSubmit(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  try {
+    await api.createMessage({
+      body: form.get("body")?.toString().trim(),
+      is_private: form.get("is_private") === "on"
+    });
+    await refreshData();
+    render();
+    toast("메시지를 저장했습니다.");
+  } catch (error) {
+    toast(error.message || "메시지 저장에 실패했습니다.");
+  }
+}
+
+async function handleMessageReplySubmit(event) {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  try {
+    await api.replyMessage(event.currentTarget.dataset.messageReplyForm, form.get("body")?.toString().trim());
+    await refreshData();
+    render();
+    toast("답장을 저장했습니다.");
+  } catch (error) {
+    toast(error.message || "답장 저장에 실패했습니다.");
   }
 }
 
