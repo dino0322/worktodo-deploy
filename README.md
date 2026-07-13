@@ -57,8 +57,10 @@ hyun@worktodo.local / member123
 1. Supabase 프로젝트를 만듭니다.
 2. Supabase SQL Editor에서 `db/schema.sql` 전체를 실행합니다.
 3. Authentication > Providers에서 Email provider를 켭니다.
-4. `SUPABASE_URL`, `SUPABASE_ANON_KEY` 값을 넣어 `node scripts/build.mjs`를 실행합니다.
-5. 생성된 `dist/` 내용을 `docs/`에 복사한 뒤 push합니다.
+4. 앱에서 첫 전체 관리자 계정을 회원가입합니다.
+5. `db/bootstrap_super_admin.sql`의 이메일을 첫 계정 이메일로 바꾸고 SQL Editor에서 실행합니다.
+6. `SUPABASE_URL`, `SUPABASE_ANON_KEY` 값을 넣어 `node scripts/build.mjs`를 실행합니다.
+7. 생성된 `dist/` 내용을 `docs/`에 복사한 뒤 push합니다.
 
 ```text
 SUPABASE_URL
