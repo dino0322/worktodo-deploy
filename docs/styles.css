@@ -209,7 +209,6 @@ body[data-theme="dark"] .btn.primary {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  animation: softDrop 0.16s ease both;
 }
 
 .workspace-menu button {
@@ -274,11 +273,10 @@ body[data-theme="dark"] .btn.primary {
 .icon-button:hover,
 .workspace-trigger:hover {
   border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
-  transform: translateY(-1px);
 }
 
 .theme-toggle {
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: border-color 0.12s ease;
 }
 
 .role-dot {
@@ -390,17 +388,15 @@ body[data-theme="dark"] .btn.primary {
 }
 
 .page-panel {
-  animation: pageSlide 0.24s ease-out both;
+  animation: pageFade 0.12s ease-out both;
 }
 
-@keyframes pageSlide {
+@keyframes pageFade {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -641,13 +637,10 @@ textarea:focus {
   background: var(--surface-soft);
   color: var(--text);
   text-align: left;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .title-row:hover {
-  transform: translateY(-2px);
   border-color: rgba(37, 99, 235, 0.35);
-  box-shadow: 0 12px 28px rgba(22, 32, 46, 0.12);
 }
 
 .title-row span {
@@ -781,12 +774,7 @@ textarea:focus {
   box-shadow: 0 8px 18px rgba(22, 32, 46, 0.10);
 }
 
-.task-list .task-card {
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
 .task-list .task-card:hover {
-  transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--brand) 34%, var(--line));
 }
 
@@ -1020,7 +1008,7 @@ textarea:focus {
   place-items: center;
   padding: 20px;
   background: rgba(15, 23, 42, 0.42);
-  animation: modalFade 0.18s ease both;
+  animation: modalFade 0.12s ease-out both;
 }
 
 .modal-card {
@@ -1033,7 +1021,7 @@ textarea:focus {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  animation: modalPop 0.2s ease-out both;
+  animation: modalSoftIn 0.14s ease-out both;
 }
 
 .modal-card h2 {
@@ -1103,12 +1091,10 @@ textarea:focus {
   background: transparent;
   color: var(--text);
   text-align: left;
-  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
 .message-row:hover,
 .message-row.active {
-  transform: translateX(3px);
   border-color: color-mix(in srgb, var(--brand) 28%, var(--line));
   background: color-mix(in srgb, var(--brand) 8%, var(--surface));
 }
@@ -1417,18 +1403,6 @@ textarea:focus {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  animation: modalPop 0.14s ease-out both;
-}
-
-@keyframes softDrop {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .member-context-menu strong {
@@ -1469,14 +1443,14 @@ textarea:focus {
   to { opacity: 1; }
 }
 
-@keyframes modalPop {
+@keyframes modalSoftIn {
   from {
     opacity: 0;
-    transform: translateY(10px) scale(0.98);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
@@ -1491,14 +1465,12 @@ textarea:focus {
   background: var(--text);
   color: #fff;
   opacity: 0;
-  transform: translateY(12px);
   pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.12s ease;
 }
 
 .toast.show {
   opacity: 1;
-  transform: translateY(0);
 }
 
 @media (max-width: 1100px) {
