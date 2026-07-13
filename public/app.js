@@ -14,7 +14,7 @@ const supabaseClient = HAS_SUPABASE
     })
   : null;
 
-const STORE_KEY = "worktodoDemoV8";
+const STORE_KEY = "worktodoDemoV9";
 const SESSION_KEY = "worktodoSessionUserId";
 const THEME_KEY = "worktodoTheme";
 const STATUS_LABEL = {
@@ -336,9 +336,14 @@ function sortedMessages(scope = state.messageScope) {
     .sort((a, b) => new Date(latestMessage(b)?.created_at || 0) - new Date(latestMessage(a)?.created_at || 0));
 }
 
-function activeDemoWorkspace(data) {
+function activeDemoWorkspace(data, userId = null) {
   const workspaces = data.workspaces?.length ? data.workspaces : [data.workspace].filter(Boolean);
-  return workspaces.find((workspace) => workspace.id === data.activeWorkspaceId) || workspaces[0];
+  if (!userId) return workspaces.find((workspace) => workspace.id === data.activeWorkspaceId) || workspaces[0];
+  const allowedWorkspaceIds = new Set((data.members || [])
+    .filter((member) => member.user_id === userId && ["active", "remote", "leave"].includes(member.status))
+    .map((member) => member.workspace_id));
+  const visibleWorkspaces = workspaces.filter((workspace) => allowedWorkspaceIds.has(workspace.id));
+  return visibleWorkspaces.find((workspace) => workspace.id === data.activeWorkspaceId) || visibleWorkspaces[0] || null;
 }
 
 function normalizeDemoData(data) {
@@ -401,7 +406,6 @@ function readDemo() {
       { workspace_id: workspaceId, user_id: minjiId, role: "member", status: "remote" },
       { workspace_id: workspaceId, user_id: hyunId, role: "admin", status: "leave" },
       { workspace_id: workspaceId, user_id: managerId, role: "manager", status: "active" },
-      { workspace_id: workspaceId, user_id: guestId, role: "guest", status: "active" },
       { workspace_id: opsWorkspaceId, user_id: adminId, role: "super_admin", status: "active" },
       { workspace_id: opsWorkspaceId, user_id: minjiId, role: "member", status: "active" },
       { workspace_id: opsWorkspaceId, user_id: hyunId, role: "member", status: "active" },
@@ -649,15 +653,26 @@ function makeDemoApi() {
     },
     async load() {
       const data = readDemo();
-      const workspace = activeDemoWorkspace(data);
       const sessionUserId = demoSessionUserId();
       const user = data.users.find((item) => item.id === sessionUserId);
-      const member = data.members.find((item) => item.user_id === user?.id && item.workspace_id === workspace?.id);
-      const workspaceMembers = data.members.filter((item) => item.workspace_id === workspace?.id && item.status !== "disabled");
+      const userMemberships = data.members.filter((item) =>
+        item.user_id === user?.id && ["active", "remote", "leave"].includes(item.status)
+      );
+      const isDemoSuperAdmin = userMemberships.some((item) => item.role === "super_admin");
+      const workspace = activeDemoWorkspace(data, sessionUserId);
+      const member = workspace
+        ? userMemberships.find((item) => item.workspace_id === workspace.id)
+        : null;
+      const visibleWorkspaces = isDemoSuperAdmin
+        ? data.workspaces
+        : data.workspaces.filter((workspaceItem) => userMemberships.some((item) => item.workspace_id === workspaceItem.id));
+      const workspaceMembers = workspace
+        ? data.members.filter((item) => item.workspace_id === workspace.id && item.status !== "disabled")
+        : [];
       return {
         noWorkspace: !workspace || !member,
         workspace,
-        workspaces: data.workspaces,
+        workspaces: visibleWorkspaces,
         allWorkspaces: data.workspaces,
         allMemberships: data.members.filter((item) => item.status !== "disabled"),
         allTasks: data.tasks,
