@@ -325,7 +325,10 @@ drop policy if exists "workspaces create owner" on public.workspaces;
 create policy "workspaces create owner"
 on public.workspaces for insert
 to authenticated
-with check (owner_id = auth.uid());
+with check (
+  owner_id = auth.uid()
+  and public.is_super_admin()
+);
 
 drop policy if exists "workspaces update managers" on public.workspaces;
 create policy "workspaces update managers"

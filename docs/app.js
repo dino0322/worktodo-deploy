@@ -6,10 +6,16 @@ const HAS_SUPABASE = Boolean(
 );
 
 const supabaseClient = HAS_SUPABASE
-  ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
+  ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey, {
+      auth: {
+        storage: window.sessionStorage,
+        persistSession: true
+      }
+    })
   : null;
 
 const STORE_KEY = "worktodoDemoV8";
+const SESSION_KEY = "worktodoSessionUserId";
 const THEME_KEY = "worktodoTheme";
 const STATUS_LABEL = {
   todo: "할 일",
@@ -596,18 +602,31 @@ function writeDemo(data) {
   localStorage.setItem(STORE_KEY, JSON.stringify(data));
 }
 
+function demoSessionUserId() {
+  return sessionStorage.getItem(SESSION_KEY);
+}
+
+function setDemoSessionUserId(userId) {
+  if (userId) {
+    sessionStorage.setItem(SESSION_KEY, userId);
+  } else {
+    sessionStorage.removeItem(SESSION_KEY);
+  }
+}
+
 function makeDemoApi() {
   return {
     async session() {
       const data = readDemo();
-      const user = data.users.find((item) => item.id === data.sessionUserId) || null;
+      const user = data.users.find((item) => item.id === demoSessionUserId()) || null;
       return user ? { id: user.id, email: user.email, name: user.full_name } : null;
     },
     async signIn(email, password) {
       const data = readDemo();
       const user = data.users.find((item) => item.email === email && item.password === password);
       if (!user) throw new Error("데모 계정을 찾을 수 없습니다.");
-      data.sessionUserId = user.id;
+      data.sessionUserId = null;
+      setDemoSessionUserId(user.id);
       writeDemo(data);
       return { id: user.id, email: user.email, name: user.full_name };
     },
@@ -617,19 +636,22 @@ function makeDemoApi() {
       const fullName = profile.full_name?.trim() || email;
       const user = { id: uid(), email, password, full_name: fullName };
       data.users.push(user);
-      data.sessionUserId = user.id;
+      data.sessionUserId = null;
+      setDemoSessionUserId(user.id);
       writeDemo(data);
       return { id: user.id, email: user.email, name: user.full_name };
     },
     async signOut() {
       const data = readDemo();
       data.sessionUserId = null;
+      setDemoSessionUserId(null);
       writeDemo(data);
     },
     async load() {
       const data = readDemo();
       const workspace = activeDemoWorkspace(data);
-      const user = data.users.find((item) => item.id === data.sessionUserId);
+      const sessionUserId = demoSessionUserId();
+      const user = data.users.find((item) => item.id === sessionUserId);
       const member = data.members.find((item) => item.user_id === user?.id && item.workspace_id === workspace?.id);
       const workspaceMembers = data.members.filter((item) => item.workspace_id === workspace?.id && item.status !== "disabled");
       return {
@@ -658,6 +680,7 @@ function makeDemoApi() {
       writeDemo(data);
     },
     async createWorkspace(name) {
+      if (!isSuperAdmin()) throw new Error("전체 관리자만 팀을 만들 수 있습니다.");
       const data = readDemo();
       const workspace = {
         id: uid(),
@@ -668,8 +691,9 @@ function makeDemoApi() {
       data.workspaces = [workspace, ...(data.workspaces || [])];
       data.workspace = workspace;
       data.activeWorkspaceId = workspace.id;
-      const isDemoSuperAdmin = data.members.some((member) => member.user_id === data.sessionUserId && member.role === "super_admin" && member.status !== "disabled");
-      data.members.push({ workspace_id: workspace.id, user_id: data.sessionUserId, role: isDemoSuperAdmin ? "super_admin" : "admin", status: "active" });
+      const sessionUserId = demoSessionUserId();
+      const isDemoSuperAdmin = data.members.some((member) => member.user_id === sessionUserId && member.role === "super_admin" && member.status !== "disabled");
+      data.members.push({ workspace_id: workspace.id, user_id: sessionUserId, role: isDemoSuperAdmin ? "super_admin" : "admin", status: "active" });
       data.projects = [
         { id: uid(), workspace_id: workspace.id, name: "일반", color: "#2563eb" },
         ...(data.projects || [])
@@ -678,11 +702,11 @@ function makeDemoApi() {
         {
           id: uid(),
           workspace_id: workspace.id,
-          sender_id: data.sessionUserId,
+          sender_id: sessionUserId,
           body: `${workspace.name} 대화가 시작되었습니다.`,
           is_private: false,
           replies: [],
-          read_by: [data.sessionUserId],
+          read_by: [sessionUserId],
           created_at: new Date().toISOString()
         },
         ...(data.messages || [])
@@ -694,8 +718,9 @@ function makeDemoApi() {
       const data = readDemo();
       const workspace = data.workspaces.find((item) => String(item.invite_code || "").toLowerCase() === String(code || "").toLowerCase());
       if (!workspace) throw new Error("초대 코드를 찾을 수 없습니다.");
-      if (!data.members.some((item) => item.workspace_id === workspace.id && item.user_id === data.sessionUserId)) {
-        data.members.push({ workspace_id: workspace.id, user_id: data.sessionUserId, role: "member", status: "active" });
+      const sessionUserId = demoSessionUserId();
+      if (!data.members.some((item) => item.workspace_id === workspace.id && item.user_id === sessionUserId)) {
+        data.members.push({ workspace_id: workspace.id, user_id: sessionUserId, role: "member", status: "active" });
       }
       data.activeWorkspaceId = workspace.id;
       data.workspace = workspace;
@@ -703,8 +728,9 @@ function makeDemoApi() {
     },
     async updateProfile(profile) {
       const data = readDemo();
-      data.users = data.users.map((user) => user.id === data.sessionUserId ? { ...user, ...profile } : user);
-      if (data.sessionUserId === state.user?.id) {
+      const sessionUserId = demoSessionUserId();
+      data.users = data.users.map((user) => user.id === sessionUserId ? { ...user, ...profile } : user);
+      if (sessionUserId === state.user?.id) {
         state.user = {
           ...state.user,
           email: profile.email || state.user.email,
@@ -759,7 +785,7 @@ function makeDemoApi() {
         ...task,
         id: uid(),
         workspace_id: data.workspace.id,
-        creator_id: data.sessionUserId,
+        creator_id: demoSessionUserId(),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -778,7 +804,7 @@ function makeDemoApi() {
       const comment = {
         id: uid(),
         task_id: taskId,
-        author_id: data.sessionUserId,
+        author_id: demoSessionUserId(),
         body,
         created_at: new Date().toISOString()
       };
@@ -793,7 +819,7 @@ function makeDemoApi() {
         ...notice,
         id: uid(),
         workspace_id: workspace.id,
-        author_id: data.sessionUserId,
+        author_id: demoSessionUserId(),
         created_at: new Date().toISOString()
       };
       data.notices.unshift(record);
@@ -815,7 +841,7 @@ function makeDemoApi() {
         ...question,
         id: uid(),
         workspace_id: workspace.id,
-        author_id: data.sessionUserId,
+        author_id: demoSessionUserId(),
         status: "open",
         replies: [],
         created_at: new Date().toISOString()
@@ -832,7 +858,7 @@ function makeDemoApi() {
             status: "answered",
             replies: [
               ...(question.replies || []),
-              { id: uid(), author_id: data.sessionUserId, body, created_at: new Date().toISOString() }
+              { id: uid(), author_id: demoSessionUserId(), body, created_at: new Date().toISOString() }
             ]
           }
         : question);
@@ -845,9 +871,9 @@ function makeDemoApi() {
         ...message,
         id: uid(),
         workspace_id: workspace.id,
-        sender_id: data.sessionUserId,
+        sender_id: demoSessionUserId(),
         replies: [],
-        read_by: [data.sessionUserId],
+        read_by: [demoSessionUserId()],
         created_at: new Date().toISOString()
       };
       data.messages = [record, ...(data.messages || [])];
@@ -861,9 +887,9 @@ function makeDemoApi() {
             ...message,
             replies: [
               ...(message.replies || []),
-              { id: uid(), author_id: data.sessionUserId, body, created_at: new Date().toISOString() }
+              { id: uid(), author_id: demoSessionUserId(), body, created_at: new Date().toISOString() }
             ],
-            read_by: [data.sessionUserId]
+            read_by: [demoSessionUserId()]
           }
         : message);
       writeDemo(data);
@@ -874,7 +900,7 @@ function makeDemoApi() {
         if (message.id !== messageId) return message;
         return {
           ...message,
-          read_by: Array.from(new Set([...(message.read_by || []), data.sessionUserId]))
+          read_by: Array.from(new Set([...(message.read_by || []), demoSessionUserId()]))
         };
       });
       writeDemo(data);
@@ -1069,6 +1095,7 @@ function makeLiveApi() {
       state.workspace = state.workspaces.find((workspace) => workspace.id === workspaceId) || state.workspace;
     },
     async createWorkspace(name) {
+      if (!isSuperAdmin()) throw new Error("전체 관리자만 팀을 만들 수 있습니다.");
       const inviteCodeValue = `TEAM-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
       const { data: workspace, error: workspaceError } = await supabaseClient
         .from("workspaces")
@@ -1537,16 +1564,9 @@ function renderNoWorkspace() {
           <span><strong>Work To Do</strong><span>${escapeHtml(profile.full_name || profile.email || "새 사용자")}</span></span>
         </div>
         <div class="guest-state">${roleBadge("guest", true)}</div>
-        <h1>아직 참여 중인 팀이 없습니다.</h1>
-        <p>팀 초대를 받으면 해당 팀 업무가 열립니다. 새 팀을 만들면 바로 관리자로 시작할 수 있습니다.</p>
-        <form class="form" data-create-workspace-form>
-          <input class="input" name="name" placeholder="새 팀 이름" required>
-          <button class="btn primary">새 팀 만들기</button>
-        </form>
-        <div class="divider-text">또는</div>
+        <h1>초대 코드 입력</h1>
         <form class="form" data-join-workspace-form>
-          <input class="input" name="code" placeholder="팀 초대 코드" required>
-          <button class="btn">초대 코드로 참여</button>
+          <input class="input" name="code" placeholder="팀 초대 코드 입력 후 Enter" required>
         </form>
         <button class="btn ghost" data-action="logout">로그아웃</button>
       </section>
@@ -2920,7 +2940,6 @@ function bindNoWorkspaceEvents() {
     renderAuth();
   });
 
-  document.querySelector("[data-create-workspace-form]")?.addEventListener("submit", handleCreateWorkspaceSubmit);
   document.querySelector("[data-join-workspace-form]")?.addEventListener("submit", handleJoinWorkspaceSubmit);
 }
 
@@ -3133,6 +3152,7 @@ async function handleConversationReplySubmit(event) {
 
 async function handleCreateWorkspaceSubmit(event) {
   event.preventDefault();
+  if (!isSuperAdmin()) return;
   const form = new FormData(event.currentTarget);
   const name = form.get("name")?.toString().trim();
   if (!name) return;
