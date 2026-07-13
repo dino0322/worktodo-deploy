@@ -395,18 +395,15 @@ with check (
 );
 
 drop policy if exists "tasks update collaborators" on public.tasks;
-create policy "tasks update collaborators"
+drop policy if exists "tasks update authors" on public.tasks;
+create policy "tasks update authors"
 on public.tasks for update
 to authenticated
 using (
-  public.is_workspace_manager(workspace_id)
-  or creator_id = auth.uid()
-  or assignee_id = auth.uid()
+  creator_id = auth.uid()
 )
 with check (
-  public.is_workspace_manager(workspace_id)
-  or creator_id = auth.uid()
-  or assignee_id = auth.uid()
+  creator_id = auth.uid()
 );
 
 drop policy if exists "comments read visible tasks" on public.task_comments;
@@ -448,11 +445,18 @@ to authenticated
 using (public.is_workspace_member(workspace_id));
 
 drop policy if exists "notices write managers" on public.notices;
-create policy "notices write managers"
-on public.notices for all
+drop policy if exists "notices create managers" on public.notices;
+create policy "notices create managers"
+on public.notices for insert
 to authenticated
-using (public.is_workspace_manager(workspace_id))
 with check (public.is_workspace_manager(workspace_id));
+
+drop policy if exists "notices update authors" on public.notices;
+create policy "notices update authors"
+on public.notices for update
+to authenticated
+using (author_id = auth.uid())
+with check (author_id = auth.uid());
 
 drop policy if exists "questions read members" on public.questions;
 create policy "questions read members"

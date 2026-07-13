@@ -456,6 +456,11 @@ body[data-theme="dark"] .btn.primary {
   grid-template-columns: minmax(180px, 1fr) 150px 150px 150px;
   gap: 10px;
   margin-bottom: 18px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 86%, var(--surface-2));
+  box-shadow: 0 12px 32px rgba(22, 32, 46, 0.07);
 }
 
 .input,
@@ -469,6 +474,14 @@ textarea {
   background: var(--input-bg);
   color: var(--text);
   outline: none;
+}
+
+.toolbar .input,
+.toolbar select,
+.notice-toolbar .input {
+  min-height: 40px;
+  border-radius: 999px;
+  background: var(--surface);
 }
 
 textarea {
@@ -721,7 +734,7 @@ textarea:focus {
 
 .task-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
   margin-top: 14px;
 }
@@ -848,6 +861,12 @@ textarea:focus {
   place-items: center;
   min-height: 100vh;
   padding: 40px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--brand) 9%, transparent) 1px, transparent 1px),
+    linear-gradient(45deg, color-mix(in srgb, var(--brand-2) 8%, transparent) 1px, transparent 1px),
+    var(--bg);
+  background-size: 34px 34px, 46px 46px, auto;
+  background-position: center;
 }
 
 .empty-workspace-page {
@@ -864,6 +883,11 @@ textarea:focus {
 .empty-workspace-card {
   width: min(460px, 100%);
   padding: 26px;
+}
+
+.auth-card {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(16px);
 }
 
 .empty-workspace-card {
@@ -985,6 +1009,53 @@ textarea:focus {
 
 .notice h3 {
   margin: 0 0 6px;
+}
+
+.notice-workspace {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-2));
+  box-shadow: var(--shadow);
+}
+
+.notice-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.notice-toolbar .muted {
+  justify-self: end;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.notice-list-frame {
+  min-height: 430px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 40px;
+}
+
+.pagination span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .notice-full {
@@ -1306,7 +1377,9 @@ textarea:focus {
 .profile-page {
   display: grid;
   gap: 18px;
+  width: min(920px, 100%);
   max-width: 920px;
+  margin: 0 auto;
 }
 
 .profile-hero {
@@ -1740,6 +1813,7 @@ textarea:focus {
   }
 
   .toolbar,
+  .notice-toolbar,
   .form-row,
   .grid.stats,
   .home-dashboard,

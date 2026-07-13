@@ -70,6 +70,8 @@ let state = {
   activeMessageId: null,
   activeMemberId: null,
   activeMessageTargetId: null,
+  editingTaskId: null,
+  editingNoticeId: null,
   memberMenu: null,
   activeForm: null,
   profileOpen: false,
@@ -83,6 +85,8 @@ let state = {
   view: "home",
   filters: {
     search: "",
+    noticeSearch: "",
+    noticePage: 1,
     status: "all",
     assignee: "all",
     priority: "all"
@@ -754,6 +758,14 @@ function makeDemoApi() {
       writeDemo(data);
       return record;
     },
+    async updateNotice(id, patch) {
+      const data = readDemo();
+      data.notices = data.notices.map((notice) => notice.id === id
+        ? { ...notice, ...patch, updated_at: new Date().toISOString() }
+        : notice);
+      writeDemo(data);
+      return data.notices.find((notice) => notice.id === id);
+    },
     async createQuestion(question) {
       const data = readDemo();
       const workspace = activeDemoWorkspace(data);
@@ -1127,6 +1139,16 @@ function makeLiveApi() {
       if (error) throw error;
       return data;
     },
+    async updateNotice(id, patch) {
+      const { data, error } = await supabaseClient
+        .from("notices")
+        .update(patch)
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      return data;
+    },
     async createQuestion(question) {
       const { data, error } = await supabaseClient
         .from("questions")
@@ -1236,6 +1258,33 @@ function filteredTasks(scope = state.view) {
   return tasks;
 }
 
+function filteredNotices() {
+  const search = state.filters.noticeSearch.trim().toLowerCase();
+  return [...state.notices]
+    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || new Date(b.created_at || 0) - new Date(a.created_at || 0))
+    .filter((notice) => {
+      if (!search) return true;
+      return [notice.title, notice.body, profileName(notice.author_id)]
+        .join(" ")
+        .toLowerCase()
+        .includes(search);
+    });
+}
+
+function noticePageData() {
+  const pageSize = 8;
+  const notices = filteredNotices();
+  const totalPages = Math.max(1, Math.ceil(notices.length / pageSize));
+  const page = Math.min(Math.max(1, Number(state.filters.noticePage) || 1), totalPages);
+  const start = (page - 1) * pageSize;
+  return {
+    notices,
+    page,
+    totalPages,
+    visible: notices.slice(start, start + pageSize)
+  };
+}
+
 function stats() {
   const myTasks = state.tasks.filter((task) => task.assignee_id === state.user?.id || task.creator_id === state.user?.id);
   return {
@@ -1295,6 +1344,10 @@ function workspaceName(workspaceId) {
 
 function userMemberships(userId = state.user?.id) {
   return allMemberships().filter((item) => item.user_id === userId && item.status !== "disabled");
+}
+
+function isMine(authorId) {
+  return Boolean(authorId && authorId === state.user?.id);
 }
 
 function memberRole(userId) {
@@ -1618,6 +1671,7 @@ function renderTaskList(scope = state.taskScope) {
 function renderTaskCard(task) {
   const comments = state.comments.filter((comment) => comment.task_id === task.id);
   const project = state.projects.find((item) => item.id === task.project_id);
+  const editable = isMine(task.creator_id);
   return `
     <article class="task-card">
       <div class="task-top">
@@ -1634,9 +1688,12 @@ function renderTaskCard(task) {
         ${task.due_date ? `<span class="pill ${isOverdue(task) ? "overdue" : ""}">마감 ${escapeHtml(task.due_date)}</span>` : ""}
       </div>
       <div class="task-actions">
-        <select data-task-status="${task.id}" aria-label="업무 상태 변경">
-          ${Object.entries(STATUS_LABEL).map(([value, label]) => option(value, label, task.status)).join("")}
-        </select>
+        ${editable ? `
+          <select data-task-status="${task.id}" aria-label="업무 상태 변경">
+            ${Object.entries(STATUS_LABEL).map(([value, label]) => option(value, label, task.status)).join("")}
+          </select>
+          <button class="btn" data-action="edit-task" data-task-id="${task.id}">수정</button>
+        ` : ""}
         <button class="btn" data-action="toggle-comments" data-task-id="${task.id}">댓글 ${comments.length}</button>
       </div>
       <div class="comment-list hidden" data-comments="${task.id}">
@@ -1660,9 +1717,10 @@ function renderComment(comment) {
 }
 
 function renderTaskForm() {
-  const draft = loadDraft("task");
+  const editing = state.editingTaskId ? state.tasks.find((task) => task.id === state.editingTaskId) : null;
+  const draft = editing || loadDraft("task");
   return `
-      <form class="form" data-task-form data-draft="task">
+      <form class="form" data-task-form ${editing ? `data-edit-task-id="${editing.id}"` : `data-draft="task"`}>
         <input class="input" name="title" placeholder="업무 제목" value="${escapeHtml(draft.title || "")}" required>
         <textarea name="description" placeholder="업무 설명">${escapeHtml(draft.description || "")}</textarea>
         <div class="form-row">
@@ -1683,7 +1741,7 @@ function renderTaskForm() {
           <option value="">프로젝트 없음</option>
           ${state.projects.map((project) => option(project.id, project.name, draft.project_id || "")).join("")}
         </select>
-        <button class="btn primary">업무 저장</button>
+        <button class="btn primary">${editing ? "업무 수정" : "업무 저장"}</button>
       </form>
   `;
 }
@@ -1918,11 +1976,23 @@ function renderMemberRows() {
 
 function renderNotices() {
   const canWrite = isManager();
+  const pageData = noticePageData();
   return `
     ${renderHead("공지", "팀 전체에 공유할 운영 메시지와 배포 안내를 남깁니다.", canWrite ? `<button class="btn primary" data-action="open-form" data-form-kind="notice">공지 작성</button>` : "")}
-    <section class="card">
-      <div class="title-list notice-title-list">
-        ${state.notices.length ? state.notices.map(renderTitleNotice).join("") : `<div class="empty small">아직 공지가 없습니다.</div>`}
+    <section class="notice-workspace">
+      <div class="notice-toolbar">
+        <input class="input search-input" data-filter="noticeSearch" placeholder="공지 제목, 내용, 작성자 검색" value="${escapeHtml(state.filters.noticeSearch)}">
+        <span class="muted">총 ${pageData.notices.length}개</span>
+      </div>
+      <div class="notice-list-frame">
+        <div class="title-list notice-title-list">
+          ${pageData.visible.length ? pageData.visible.map(renderTitleNotice).join("") : `<div class="empty small">조건에 맞는 공지가 없습니다.</div>`}
+        </div>
+      </div>
+      <div class="pagination">
+        <button class="btn ghost" data-action="notice-page" data-page="${pageData.page - 1}" ${pageData.page <= 1 ? "disabled" : ""}>이전</button>
+        <span>${pageData.page} / ${pageData.totalPages}</span>
+        <button class="btn ghost" data-action="notice-page" data-page="${pageData.page + 1}" ${pageData.page >= pageData.totalPages ? "disabled" : ""}>다음</button>
       </div>
     </section>
   `;
@@ -1943,6 +2013,7 @@ function renderNoticeCard(notice, compact = false) {
 function renderNoticeModal() {
   const notice = state.notices.find((item) => item.id === state.activeNoticeId);
   if (!notice) return "";
+  const editable = isMine(notice.author_id);
   return `
     <div class="modal-overlay" data-action="close-notice">
       <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="noticeModalTitle">
@@ -1953,6 +2024,7 @@ function renderNoticeModal() {
         </div>
         <h2 id="noticeModalTitle">${escapeHtml(notice.title)}</h2>
         <p class="notice-full">${escapeHtml(notice.body)}</p>
+        ${editable ? `<div class="modal-actions"><button class="btn primary" data-action="edit-notice" data-notice-id="${notice.id}">공지 수정</button></div>` : ""}
       </section>
     </div>
   `;
@@ -1962,6 +2034,7 @@ function renderTaskModal() {
   const task = state.tasks.find((item) => item.id === state.activeTaskId);
   if (!task) return "";
   const comments = state.comments.filter((comment) => comment.task_id === task.id);
+  const editable = isMine(task.creator_id);
   return `
     <div class="modal-overlay" data-action="close-task">
       <section class="modal-card pop-card" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
@@ -1974,6 +2047,7 @@ function renderTaskModal() {
         </div>
         <h2 id="taskModalTitle">${escapeHtml(task.title)}</h2>
         <p class="notice-full">${escapeHtml(task.description || "설명이 없습니다.")}</p>
+        ${editable ? `<div class="modal-actions"><button class="btn primary" data-action="edit-task" data-task-id="${task.id}">업무 수정</button></div>` : ""}
         <div class="comment-list modal-comments">
           ${comments.length ? comments.map(renderComment).join("") : `<div class="muted">아직 댓글이 없습니다.</div>`}
           <form class="form" data-comment-form="${task.id}">
@@ -1988,9 +2062,11 @@ function renderTaskModal() {
 
 function renderFormModal() {
   if (!state.activeForm) return "";
+  const isEditingTask = state.activeForm === "task" && state.editingTaskId;
+  const isEditingNotice = state.activeForm === "notice" && state.editingNoticeId;
   const title = {
-    task: "새 업무 만들기",
-    notice: "공지 작성",
+    task: isEditingTask ? "업무 수정" : "새 업무 만들기",
+    notice: isEditingNotice ? "공지 수정" : "공지 작성",
     question: "질문 작성",
     directMessage: "메시지 보내기"
   }[state.activeForm];
@@ -2014,13 +2090,14 @@ function renderActiveForm() {
 }
 
 function renderNoticeForm() {
-  const draft = loadDraft("notice");
+  const editing = state.editingNoticeId ? state.notices.find((notice) => notice.id === state.editingNoticeId) : null;
+  const draft = editing || loadDraft("notice");
   return `
-    <form class="form" data-notice-form data-draft="notice">
+    <form class="form" data-notice-form ${editing ? `data-edit-notice-id="${editing.id}"` : `data-draft="notice"`}>
       <input class="input" name="title" placeholder="공지 제목" value="${escapeHtml(draft.title || "")}" required>
       <textarea class="notice-editor" name="body" placeholder="공지 내용 전체를 작성하세요." required>${escapeHtml(draft.body || "")}</textarea>
-      <label><input type="checkbox" name="pinned" ${draft.pinned === "on" ? "checked" : ""}> 상단 고정</label>
-      <button class="btn primary">공지 저장</button>
+      <label><input type="checkbox" name="pinned" ${draft.pinned === "on" || draft.pinned === true ? "checked" : ""}> 상단 고정</label>
+      <button class="btn primary">${editing ? "공지 수정" : "공지 저장"}</button>
     </form>
   `;
 }
@@ -2079,10 +2156,6 @@ function renderProfileEditModal() {
           </div>
           <div class="settings-list locked-list">
             <div class="settings-row locked">
-              <span class="settings-label">직책/직무</span>
-              <span class="settings-value">${escapeHtml(profile.position || "관리자가 지정")}</span>
-            </div>
-            <div class="settings-row locked">
               <span class="settings-label">팀 역할</span>
               <span class="settings-value">${escapeHtml(ROLE_LABEL[state.role] || state.role)}</span>
             </div>
@@ -2127,7 +2200,6 @@ function renderMemberEditModal() {
         <button class="modal-close" type="button" data-action="close-member-edit" aria-label="닫기">×</button>
         <h2 id="memberEditTitle">${escapeHtml(profile.full_name || profile.email)}</h2>
         <form class="form" data-member-edit-form data-member-id="${profile.id}">
-          <input class="input" name="position" placeholder="직책 또는 직무" value="${escapeHtml(profile.position || "")}">
           <select name="role">
             ${editableRoles.map((role) => option(role, ROLE_LABEL[role], member.role)).join("")}
           </select>
@@ -2319,10 +2391,6 @@ function renderProfile() {
         <h2>팀</h2>
         <div class="settings-list">
           <div class="settings-row">
-            <span class="settings-label">직책/직무</span>
-            <span class="settings-value">${escapeHtml(profile.position || "-")}</span>
-          </div>
-          <div class="settings-row">
             <span class="settings-label">역할</span>
             <span class="settings-value with-badge">${roleBadge(state.role)}${escapeHtml(roleLabel)}</span>
           </div>
@@ -2464,6 +2532,30 @@ function bindEvents() {
   document.querySelectorAll("[data-action='open-form']").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeForm = button.dataset.formKind;
+      state.editingTaskId = null;
+      state.editingNoticeId = null;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='edit-task']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const task = state.tasks.find((item) => item.id === button.dataset.taskId);
+      if (!task || !isMine(task.creator_id)) return;
+      state.activeTaskId = null;
+      state.activeForm = "task";
+      state.editingTaskId = task.id;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='edit-notice']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const notice = state.notices.find((item) => item.id === button.dataset.noticeId);
+      if (!notice || !isMine(notice.author_id)) return;
+      state.activeNoticeId = null;
+      state.activeForm = "notice";
+      state.editingNoticeId = notice.id;
       render();
     });
   });
@@ -2531,6 +2623,8 @@ function bindEvents() {
     item.addEventListener("click", (event) => {
       if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
       state.activeForm = null;
+      state.editingTaskId = null;
+      state.editingNoticeId = null;
       render();
     });
   });
@@ -2624,6 +2718,14 @@ function bindEvents() {
   document.querySelectorAll("[data-filter]").forEach((field) => {
     field.addEventListener("input", () => {
       state.filters[field.dataset.filter] = field.value;
+      if (field.dataset.filter === "noticeSearch") state.filters.noticePage = 1;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='notice-page']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.filters.noticePage = Number(button.dataset.page) || 1;
       render();
     });
   });
@@ -2721,14 +2823,22 @@ async function handleTaskSubmit(event) {
     visibility: "team"
   };
   try {
-    await api.createTask(task);
-    clearDraft("task");
+    const editId = event.currentTarget.dataset.editTaskId;
+    const editing = editId ? state.tasks.find((item) => item.id === editId) : null;
+    if (editing) {
+      if (!isMine(editing.creator_id)) return;
+      await api.updateTask(editId, task);
+      state.editingTaskId = null;
+    } else {
+      await api.createTask(task);
+      clearDraft("task");
+    }
     state.activeForm = null;
     await refreshData();
     render();
-    toast("업무를 만들었습니다.");
+    toast(editing ? "업무를 수정했습니다." : "업무를 만들었습니다.");
   } catch (error) {
-    toast(error.message || "업무 생성에 실패했습니다.");
+    toast(error.message || "업무 저장에 실패했습니다.");
   }
 }
 
@@ -2750,18 +2860,27 @@ async function handleCommentSubmit(event) {
 async function handleNoticeSubmit(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const notice = {
+    title: form.get("title")?.toString().trim(),
+    body: form.get("body")?.toString().trim(),
+    pinned: form.get("pinned") === "on",
+    importance: form.get("pinned") === "on" ? "important" : "normal"
+  };
   try {
-    await api.createNotice({
-      title: form.get("title")?.toString().trim(),
-      body: form.get("body")?.toString().trim(),
-      pinned: form.get("pinned") === "on",
-      importance: form.get("pinned") === "on" ? "important" : "normal"
-    });
-    clearDraft("notice");
+    const editId = event.currentTarget.dataset.editNoticeId;
+    const editing = editId ? state.notices.find((item) => item.id === editId) : null;
+    if (editing) {
+      if (!isMine(editing.author_id)) return;
+      await api.updateNotice(editId, notice);
+      state.editingNoticeId = null;
+    } else {
+      await api.createNotice(notice);
+      clearDraft("notice");
+    }
     state.activeForm = null;
     await refreshData();
     render();
-    toast("공지를 저장했습니다.");
+    toast(editing ? "공지를 수정했습니다." : "공지를 저장했습니다.");
   } catch (error) {
     toast(error.message || "공지 저장에 실패했습니다.");
   }
@@ -2931,7 +3050,6 @@ async function handleMemberEditSubmit(event) {
   const form = new FormData(event.currentTarget);
   try {
     await api.updateMember(event.currentTarget.dataset.memberId, {
-      position: form.get("position")?.toString().trim(),
       role: form.get("role")?.toString(),
       status: form.get("status")?.toString()
     });
