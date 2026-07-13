@@ -352,6 +352,12 @@ body[data-theme="dark"] .btn.primary {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
   min-height: calc(100vh - 72px);
+  background:
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--brand) 6%, var(--surface)) 0,
+      color-mix(in srgb, var(--brand) 6%, var(--surface)) 260px,
+      color-mix(in srgb, var(--brand) 3%, var(--bg)) 260px,
+      var(--bg) 340px);
 }
 
 .sidebar {
@@ -361,8 +367,11 @@ body[data-theme="dark"] .btn.primary {
   max-height: calc(100vh - 72px);
   overflow: auto;
   padding: 22px 16px;
-  border-right: 1px solid var(--line);
-  background: var(--surface);
+  border-right: 1px solid color-mix(in srgb, var(--brand) 14%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--brand) 9%, var(--surface)), var(--surface) 46%),
+    linear-gradient(90deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 70%, transparent) 100%);
+  box-shadow: 18px 0 46px rgba(22, 32, 46, 0.06);
 }
 
 .nav-button {
@@ -375,15 +384,17 @@ body[data-theme="dark"] .btn.primary {
   padding: 9px 12px;
   border: 1px solid transparent;
   border-radius: 8px;
-  background: transparent;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
   color: var(--muted);
   text-align: left;
 }
 
 .nav-button.active {
-  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--brand) 18%, var(--surface)), var(--surface));
   color: var(--brand);
-  border-color: rgba(37, 99, 235, 0.16);
+  border-color: color-mix(in srgb, var(--brand) 24%, var(--line));
+  box-shadow: 0 10px 26px rgba(22, 32, 46, 0.08);
   font-weight: 700;
 }
 
@@ -1967,6 +1978,11 @@ textarea:focus {
     gap: 8px;
     overflow-x: auto;
     padding: 10px 16px;
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--brand) 14%, var(--line));
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--brand) 8%, var(--surface)), var(--surface));
+    box-shadow: 0 14px 34px rgba(22, 32, 46, 0.08);
   }
 
   .nav-button {
