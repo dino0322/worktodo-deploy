@@ -28,11 +28,19 @@ const ROLE_LABEL = {
   admin: "관리자",
   guest: "게스트"
 };
+const ROLE_META = {
+  admin: { icon: "◆", className: "admin", label: "관리자" },
+  manager: { icon: "●", className: "manager", label: "매니저" },
+  member: { icon: "■", className: "member", label: "팀원" },
+  viewer: { icon: "▲", className: "viewer", label: "읽기" },
+  guest: { icon: "○", className: "guest", label: "게스트" }
+};
 
 let state = {
   mode: HAS_SUPABASE ? "live" : "demo",
   user: null,
   workspace: null,
+  workspaces: [],
   role: "member",
   profiles: [],
   projects: [],
@@ -41,7 +49,8 @@ let state = {
   notices: [],
   questions: [],
   messages: [],
-  view: "mine",
+  activeNoticeId: null,
+  view: "home",
   filters: {
     search: "",
     status: "all",
@@ -97,11 +106,35 @@ function profileName(id) {
   return profile?.full_name || profile?.email || "미지정";
 }
 
+function noticeExcerpt(body = "", length = 86) {
+  const text = String(body || "").replace(/\s+/g, " ").trim();
+  return text.length > length ? `${text.slice(0, length)}...` : text;
+}
+
+function activeDemoWorkspace(data) {
+  const workspaces = data.workspaces?.length ? data.workspaces : [data.workspace].filter(Boolean);
+  return workspaces.find((workspace) => workspace.id === data.activeWorkspaceId) || workspaces[0];
+}
+
+function normalizeDemoData(data) {
+  const fallbackWorkspace = data.workspace || { id: "demo-workspace", name: "Work To Do 팀" };
+  data.workspaces = data.workspaces?.length ? data.workspaces : [fallbackWorkspace];
+  data.activeWorkspaceId = data.activeWorkspaceId || data.workspaces[0]?.id || fallbackWorkspace.id;
+  data.workspace = activeDemoWorkspace(data) || fallbackWorkspace;
+  data.projects = data.projects || [];
+  data.tasks = data.tasks || [];
+  data.comments = data.comments || [];
+  data.notices = data.notices || [];
+  data.questions = data.questions || [];
+  data.messages = data.messages || [];
+  return data;
+}
+
 function readDemo() {
   const raw = localStorage.getItem(STORE_KEY);
   if (raw) {
     try {
-      return JSON.parse(raw);
+      return normalizeDemoData(JSON.parse(raw));
     } catch {
       localStorage.removeItem(STORE_KEY);
     }
@@ -110,26 +143,72 @@ function readDemo() {
   const minjiId = "demo-minji";
   const hyunId = "demo-hyun";
   const workspaceId = "demo-workspace";
+  const opsWorkspaceId = "demo-ops-workspace";
+  const researchWorkspaceId = "demo-research-workspace";
   const projectOps = "project-ops";
   const projectLaunch = "project-launch";
-  return {
+  return normalizeDemoData({
     sessionUserId: adminId,
     users: [
       { id: adminId, email: "admin@worktodo.local", password: "admin123", full_name: "손팀장" },
       { id: minjiId, email: "minji@worktodo.local", password: "member123", full_name: "강민지" },
       { id: hyunId, email: "hyun@worktodo.local", password: "member123", full_name: "이현우" }
     ],
-    workspace: { id: workspaceId, name: "Work To Do 팀" },
+    activeWorkspaceId: workspaceId,
+    workspaces: [
+      { id: workspaceId, name: "Work To Do 제품팀" },
+      { id: opsWorkspaceId, name: "운영 체크팀" },
+      { id: researchWorkspaceId, name: "리서치 랩" }
+    ],
+    workspace: { id: workspaceId, name: "Work To Do 제품팀" },
     members: [
       { workspace_id: workspaceId, user_id: adminId, role: "admin", status: "active" },
       { workspace_id: workspaceId, user_id: minjiId, role: "member", status: "active" },
-      { workspace_id: workspaceId, user_id: hyunId, role: "manager", status: "active" }
+      { workspace_id: workspaceId, user_id: hyunId, role: "manager", status: "active" },
+      { workspace_id: opsWorkspaceId, user_id: adminId, role: "manager", status: "active" },
+      { workspace_id: opsWorkspaceId, user_id: minjiId, role: "member", status: "active" },
+      { workspace_id: opsWorkspaceId, user_id: hyunId, role: "member", status: "active" },
+      { workspace_id: researchWorkspaceId, user_id: adminId, role: "admin", status: "active" },
+      { workspace_id: researchWorkspaceId, user_id: minjiId, role: "manager", status: "active" },
+      { workspace_id: researchWorkspaceId, user_id: hyunId, role: "member", status: "active" }
     ],
     projects: [
       { id: projectOps, workspace_id: workspaceId, name: "운영", color: "#2563eb" },
-      { id: projectLaunch, workspace_id: workspaceId, name: "배포", color: "#0f766e" }
+      { id: projectLaunch, workspace_id: workspaceId, name: "배포", color: "#0f766e" },
+      { id: "project-ops-check", workspace_id: opsWorkspaceId, name: "체크리스트", color: "#b45309" },
+      { id: "project-research", workspace_id: researchWorkspaceId, name: "실험", color: "#7c3aed" }
     ],
     tasks: [
+      {
+        id: uid(),
+        workspace_id: opsWorkspaceId,
+        project_id: "project-ops-check",
+        title: "주간 운영 점검표 업데이트",
+        description: "공지, 메시지, 질문 탭에서 누락된 답변이 없는지 금요일 오전에 확인한다.",
+        status: "todo",
+        priority: "normal",
+        visibility: "team",
+        creator_id: adminId,
+        assignee_id: minjiId,
+        due_date: today(2),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: uid(),
+        workspace_id: researchWorkspaceId,
+        project_id: "project-research",
+        title: "업무 분류 자동화 아이디어 정리",
+        description: "반복 업무와 질문 데이터를 바탕으로 자동 분류 후보를 정리한다.",
+        status: "in_progress",
+        priority: "low",
+        visibility: "team",
+        creator_id: minjiId,
+        assignee_id: adminId,
+        due_date: today(5),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
       {
         id: uid(),
         workspace_id: workspaceId,
@@ -222,13 +301,33 @@ function readDemo() {
         workspace_id: workspaceId,
         author_id: adminId,
         title: "이번 주 목표",
-        body: "업무 흐름은 먼저 간단하게 열고, DB 연결과 배포 안정성을 우선 확인합니다.",
+        body: "업무 흐름은 먼저 간단하게 열고, DB 연결과 배포 안정성을 우선 확인합니다. 홈에서는 핵심 공지만 짧게 보이지만, 공지 카드의 전문 보기 버튼을 누르면 세부 일정, 담당자, 주의사항을 모두 확인할 수 있습니다. 이번 주에는 GitHub Pages 배포, Supabase 스키마 점검, 팀별 권한 확인을 순서대로 마무리합니다.",
+        pinned: true,
+        importance: "important",
+        created_at: new Date().toISOString()
+      },
+      {
+        id: uid(),
+        workspace_id: workspaceId,
+        author_id: hyunId,
+        title: "질문/메시지 운영 방식",
+        body: "질문은 팀 전체가 볼 수 있는 업무 Q&A로 사용하고, 메시지는 개인 상담이나 비공개 확인이 필요한 내용에 사용합니다. 매니저와 관리자는 답변 권한을 갖고, 일반 팀원에게는 답변 입력창이 보이지 않습니다.",
+        pinned: false,
+        importance: "normal",
+        created_at: new Date().toISOString()
+      },
+      {
+        id: uid(),
+        workspace_id: opsWorkspaceId,
+        author_id: adminId,
+        title: "운영 체크팀 공지",
+        body: "운영 체크팀에서는 매주 월요일 전체 업무 누락 여부를 확인합니다.",
         pinned: true,
         importance: "important",
         created_at: new Date().toISOString()
       }
     ]
-  };
+  });
 }
 
 function writeDemo(data) {
@@ -267,19 +366,27 @@ function makeDemoApi() {
     },
     async load() {
       const data = readDemo();
+      const workspace = activeDemoWorkspace(data);
       const user = data.users.find((item) => item.id === data.sessionUserId);
-      const member = data.members.find((item) => item.user_id === user?.id);
+      const member = data.members.find((item) => item.user_id === user?.id && item.workspace_id === workspace?.id);
       return {
-        workspace: data.workspace,
+        workspace,
+        workspaces: data.workspaces,
         role: member?.role || "member",
         profiles: data.users.map(({ id, email, full_name }) => ({ id, email, full_name })),
-        projects: data.projects,
-        tasks: data.tasks,
+        projects: data.projects.filter((item) => item.workspace_id === workspace?.id),
+        tasks: data.tasks.filter((item) => item.workspace_id === workspace?.id),
         comments: data.comments,
-        notices: data.notices,
-        questions: data.questions || [],
-        messages: data.messages || []
+        notices: data.notices.filter((item) => item.workspace_id === workspace?.id),
+        questions: (data.questions || []).filter((item) => item.workspace_id === workspace?.id),
+        messages: (data.messages || []).filter((item) => item.workspace_id === workspace?.id)
       };
+    },
+    async setWorkspace(workspaceId) {
+      const data = readDemo();
+      data.activeWorkspaceId = workspaceId;
+      data.workspace = activeDemoWorkspace(data);
+      writeDemo(data);
     },
     async createTask(task) {
       const data = readDemo();
@@ -316,10 +423,11 @@ function makeDemoApi() {
     },
     async createNotice(notice) {
       const data = readDemo();
+      const workspace = activeDemoWorkspace(data);
       const record = {
         ...notice,
         id: uid(),
-        workspace_id: data.workspace.id,
+        workspace_id: workspace.id,
         author_id: data.sessionUserId,
         created_at: new Date().toISOString()
       };
@@ -329,10 +437,11 @@ function makeDemoApi() {
     },
     async createQuestion(question) {
       const data = readDemo();
+      const workspace = activeDemoWorkspace(data);
       const record = {
         ...question,
         id: uid(),
-        workspace_id: data.workspace.id,
+        workspace_id: workspace.id,
         author_id: data.sessionUserId,
         status: "open",
         replies: [],
@@ -358,10 +467,11 @@ function makeDemoApi() {
     },
     async createMessage(message) {
       const data = readDemo();
+      const workspace = activeDemoWorkspace(data);
       const record = {
         ...message,
         id: uid(),
-        workspace_id: data.workspace.id,
+        workspace_id: workspace.id,
         sender_id: data.sessionUserId,
         replies: [],
         created_at: new Date().toISOString()
@@ -496,6 +606,7 @@ function makeLiveApi() {
 
       return {
         workspace,
+        workspaces: [workspace],
         role,
         profiles: profiles || [],
         projects: projectsResult.data || [],
@@ -518,6 +629,9 @@ function makeLiveApi() {
         .single();
       if (error) throw error;
       return data;
+    },
+    async setWorkspace() {
+      throw new Error("DB 모드의 다중 팀 전환은 멤버십 API 확장 후 사용할 수 있습니다.");
     },
     async updateTask(id, patch) {
       const { data, error } = await supabaseClient
@@ -670,6 +784,23 @@ function visibleMessages() {
   return state.messages.filter((message) => message.sender_id === state.user?.id);
 }
 
+function roleBadge(role = state.role, showText = false) {
+  const meta = ROLE_META[role] || ROLE_META.guest;
+  return `<span class="role-dot ${meta.className}" title="${meta.label}" aria-label="${meta.label}">${meta.icon}${showText ? `<span>${meta.label}</span>` : ""}</span>`;
+}
+
+function workspaceSelect() {
+  if (!state.workspaces?.length) return `<span class="workspace-chip">${escapeHtml(state.workspace?.name || "워크스페이스")}</span>`;
+  return `
+    <label class="workspace-select">
+      <span>팀</span>
+      <select data-workspace-switch aria-label="팀 선택">
+        ${state.workspaces.map((workspace) => option(workspace.id, workspace.name, state.workspace?.id)).join("")}
+      </select>
+    </label>
+  `;
+}
+
 function render() {
   if (!state.user) {
     renderAuth();
@@ -684,21 +815,22 @@ function render() {
           <span><strong>Work To Do</strong><span>팀 업무와 개인 할 일을 한 곳에서</span></span>
         </div>
         <div class="top-actions">
-          <span class="workspace-chip">${escapeHtml(state.workspace?.name || "워크스페이스")}</span>
-          <span class="role-chip">${escapeHtml(profile.full_name || profile.email)} · ${ROLE_LABEL[state.role] || state.role}</span>
+          ${workspaceSelect()}
+          <span class="role-chip">${roleBadge(state.role)}<span>${escapeHtml(profile.full_name || profile.email)}</span></span>
           <span class="mode-chip ${state.mode === "live" ? "live" : ""}">${state.mode === "live" ? "DB 연결됨" : "데모 모드"}</span>
           <button class="btn ghost" data-action="logout">로그아웃</button>
         </div>
       </header>
       <div class="layout">
         <aside class="sidebar">
+          ${navButton("home", "홈")}
+          ${navButton("messages", "메시지", false, true)}
+          ${navButton("questions", "질문", false, true)}
           ${navButton("mine", "내 업무")}
           ${navButton("team", "팀 업무")}
+          ${navButton("notices", "공지")}
           ${navButton("board", "보드")}
           ${navButton("dashboard", "대시보드", !isManager())}
-          ${navButton("notices", "공지")}
-          ${navButton("questions", "질문")}
-          ${navButton("messages", "메시지")}
           ${navButton("profile", "내 정보")}
           <div class="side-panel">
             <h3>빠른 안내</h3>
@@ -711,16 +843,18 @@ function render() {
           ${renderPage()}
         </main>
       </div>
+      ${renderNoticeModal()}
     </div>
   `;
   bindEvents();
 }
 
-function navButton(view, label, hidden = false) {
-  return `<button class="nav-button ${state.view === view ? "active" : ""}" data-view="${view}" ${hidden ? "hidden" : ""}>${label}</button>`;
+function navButton(view, label, hidden = false, quick = false) {
+  return `<button class="nav-button ${quick ? "quick" : ""} ${state.view === view ? "active" : ""}" data-view="${view}" ${hidden ? "hidden" : ""}>${label}</button>`;
 }
 
 function renderPage() {
+  if (state.view === "home") return renderHome();
   if (state.view === "board") return renderBoard();
   if (state.view === "dashboard") return renderDashboard();
   if (state.view === "notices") return renderNotices();
@@ -751,6 +885,61 @@ function renderStats() {
       <div class="stat-card"><span>지연 업무</span><strong>${data.overdue}</strong></div>
       <div class="stat-card"><span>검토 대기</span><strong>${data.review}</strong></div>
     </div>
+  `;
+}
+
+function renderHome() {
+  const myTasks = filteredTasks("mine").filter((task) => task.status !== "done").slice(0, 4);
+  const teamTasks = filteredTasks("team").filter((task) => task.status !== "done").slice(0, 4);
+  const notices = [...state.notices].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))).slice(0, 3);
+  return `
+    ${renderHead("오늘 볼 일", `${escapeHtml(state.workspace?.name || "팀")}의 업무와 공지를 한눈에 확인합니다.`, `<button class="btn primary" data-action="focus-task-form">새 업무</button>`)}
+    ${renderStats()}
+    <div class="home-grid">
+      <section class="home-section">
+        <div class="section-title">
+          <h2>내 업무</h2>
+          <button class="btn ghost" data-view="mine">전체보기</button>
+        </div>
+        <div class="list compact-list">
+          ${myTasks.length ? myTasks.map(renderMiniTaskCard).join("") : `<div class="empty">내 미완료 업무가 없습니다.</div>`}
+        </div>
+      </section>
+      <section class="home-section">
+        <div class="section-title">
+          <h2>팀 업무</h2>
+          <button class="btn ghost" data-view="team">전체보기</button>
+        </div>
+        <div class="list compact-list">
+          ${teamTasks.length ? teamTasks.map(renderMiniTaskCard).join("") : `<div class="empty">팀 미완료 업무가 없습니다.</div>`}
+        </div>
+      </section>
+      <section class="home-section notices-home">
+        <div class="section-title">
+          <h2>공지</h2>
+          <button class="btn ghost" data-view="notices">전체보기</button>
+        </div>
+        <div class="list compact-list">
+          ${notices.length ? notices.map((notice) => renderNoticeCard(notice, true)).join("") : `<div class="empty">표시할 공지가 없습니다.</div>`}
+        </div>
+      </section>
+    </div>
+    <div class="home-form-row">
+      ${renderTaskForm()}
+    </div>
+  `;
+}
+
+function renderMiniTaskCard(task) {
+  return `
+    <article class="mini-task home-mini-task">
+      <strong>${escapeHtml(task.title)}</strong>
+      <div class="task-meta">
+        <span class="pill">${STATUS_LABEL[task.status] || task.status}</span>
+        <span class="pill">${escapeHtml(profileName(task.assignee_id))}</span>
+        ${task.due_date ? `<span class="pill ${isOverdue(task) ? "overdue" : ""}">${escapeHtml(task.due_date)}</span>` : ""}
+      </div>
+    </article>
   `;
 }
 
@@ -960,26 +1149,49 @@ function renderNotices() {
     ${renderHead("공지", "팀 전체에 공유할 운영 메시지와 배포 안내를 남깁니다.")}
     <div class="content-grid">
       <section class="list">
-        ${state.notices.length ? state.notices.map((notice) => `
-          <article class="notice">
-            <div class="task-meta">
-              ${notice.pinned ? `<span class="pill high">고정</span>` : ""}
-              <span class="pill">${escapeHtml(profileName(notice.author_id))}</span>
-            </div>
-            <h3>${escapeHtml(notice.title)}</h3>
-            <p class="muted">${escapeHtml(notice.body)}</p>
-          </article>
-        `).join("") : `<div class="empty">아직 공지가 없습니다.</div>`}
+        ${state.notices.length ? state.notices.map((notice) => renderNoticeCard(notice, false)).join("") : `<div class="empty">아직 공지가 없습니다.</div>`}
       </section>
       <aside class="card ${canWrite ? "" : "hidden"}">
         <h2>공지 작성</h2>
         <form class="form" data-notice-form>
           <input class="input" name="title" placeholder="공지 제목" required>
-          <textarea name="body" placeholder="공지 내용" required></textarea>
+          <textarea class="notice-editor" name="body" placeholder="공지 내용 전체를 작성하세요. 목록과 홈에서는 일부만 보이고, 전문 보기에서 전체가 열립니다." required></textarea>
           <label><input type="checkbox" name="pinned"> 상단 고정</label>
           <button class="btn primary">공지 저장</button>
         </form>
       </aside>
+    </div>
+  `;
+}
+
+function renderNoticeCard(notice, compact = false) {
+  return `
+    <article class="notice ${compact ? "compact" : ""}">
+      <div class="task-meta">
+        ${notice.pinned ? `<span class="pill high">고정</span>` : ""}
+        <span class="pill">${escapeHtml(profileName(notice.author_id))}</span>
+      </div>
+      <h3>${escapeHtml(notice.title)}</h3>
+      <p class="muted">${escapeHtml(noticeExcerpt(notice.body, compact ? 72 : 120))}</p>
+      <button class="btn" data-action="open-notice" data-notice-id="${notice.id}">전문 보기</button>
+    </article>
+  `;
+}
+
+function renderNoticeModal() {
+  const notice = state.notices.find((item) => item.id === state.activeNoticeId);
+  if (!notice) return "";
+  return `
+    <div class="modal-overlay" data-action="close-notice">
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="noticeModalTitle">
+        <button class="modal-close" type="button" data-action="close-notice" aria-label="닫기">×</button>
+        <div class="task-meta">
+          ${notice.pinned ? `<span class="pill high">고정</span>` : ""}
+          <span class="pill">${escapeHtml(profileName(notice.author_id))}</span>
+        </div>
+        <h2 id="noticeModalTitle">${escapeHtml(notice.title)}</h2>
+        <p class="notice-full">${escapeHtml(notice.body)}</p>
+      </section>
     </div>
   `;
 }
@@ -1151,8 +1363,36 @@ function bindEvents() {
     renderAuth();
   });
 
+  document.querySelector("[data-workspace-switch]")?.addEventListener("change", async (event) => {
+    try {
+      await api.setWorkspace(event.target.value);
+      state.view = "home";
+      state.activeNoticeId = null;
+      await refreshData();
+      render();
+      toast("팀을 전환했습니다.");
+    } catch (error) {
+      toast(error.message || "팀 전환에 실패했습니다.");
+    }
+  });
+
   document.querySelector("[data-action='focus-task-form']")?.addEventListener("click", () => {
     document.querySelector("#taskFormCard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  document.querySelectorAll("[data-action='open-notice']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeNoticeId = button.dataset.noticeId;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='close-notice']").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      state.activeNoticeId = null;
+      render();
+    });
   });
 
   document.querySelectorAll("[data-filter]").forEach((field) => {
