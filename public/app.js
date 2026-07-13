@@ -295,7 +295,7 @@ function messagePeerId(message) {
 }
 
 function messagePeerName(conversation) {
-  if (!conversation.is_private) return "팀 메시지";
+  if (!conversation.is_private) return state.workspace?.name || "팀";
   return profileName(conversation.peer_id);
 }
 
@@ -308,7 +308,7 @@ function sortedMessages(scope = state.messageScope) {
       is_private: false,
       is_team_thread: true,
       messages: teamMessages,
-      body: "팀 메시지가 아직 없습니다.",
+      body: "대화가 아직 없습니다.",
       created_at: teamMessages[0]?.created_at || new Date().toISOString()
     }];
   }
@@ -680,7 +680,7 @@ function makeDemoApi() {
           id: uid(),
           workspace_id: workspace.id,
           sender_id: data.sessionUserId,
-          body: `${workspace.name} 팀 메시지가 시작되었습니다.`,
+          body: `${workspace.name} 대화가 시작되었습니다.`,
           is_private: false,
           replies: [],
           read_by: [data.sessionUserId],
@@ -1089,7 +1089,7 @@ function makeLiveApi() {
         .insert({
           workspace_id: workspace.id,
           sender_id: state.user.id,
-          body: `${name} 팀 메시지가 시작되었습니다.`,
+          body: `${name} 대화가 시작되었습니다.`,
           is_private: false,
           read_by: [state.user.id]
         });
@@ -1507,12 +1507,6 @@ function render() {
           ${navButton("tasks", "업무")}
           ${navButton("notices", "공지")}
           ${navButton("dashboard", isSuperAdmin() ? "전체 관리자" : isAdmin() ? "관리자" : "팀원")}
-          <div class="side-panel">
-            <h3>빠른 안내</h3>
-            <p>${state.mode === "live"
-              ? "현재 Supabase DB에 연결되어 있습니다. 업무와 공지가 서버에 저장됩니다."
-              : "Supabase 환경변수를 넣으면 같은 화면이 실제 DB 기반으로 전환됩니다."}</p>
-          </div>
         </aside>
         <main class="main">
           <div class="page-panel" data-current-view="${state.view}">
@@ -2194,7 +2188,6 @@ function renderDirectMessageForm() {
   const draft = loadDraft(`direct:${state.activeMessageTargetId || "member"}`);
   return `
     <form class="form" data-direct-message-form data-draft="direct:${escapeHtml(state.activeMessageTargetId || "member")}">
-      <p class="muted">${escapeHtml(target?.full_name || target?.email || "팀원")}에게 개인 메시지를 보냅니다.</p>
       <textarea name="body" placeholder="메시지를 입력하세요" required>${escapeHtml(draft.body || "")}</textarea>
       <button class="btn primary">메시지 전송</button>
     </form>
@@ -2331,7 +2324,7 @@ function renderMessages() {
     <section class="message-shell">
       <div class="message-list-panel">
         <div class="message-tabs" aria-label="메시지 유형">
-          <button class="${state.messageScope === "team" ? "active" : ""}" data-message-scope="team">팀 메시지</button>
+          <button class="${state.messageScope === "team" ? "active" : ""}" data-message-scope="team">${escapeHtml(state.workspace?.name || "팀")}</button>
           <button class="${state.messageScope === "private" ? "active" : ""}" data-message-scope="private">개인 메시지</button>
         </div>
         <div class="message-list">
@@ -2367,14 +2360,14 @@ function renderMessageRow(message) {
 }
 
 function renderMessageDetail(message) {
-  const title = message.is_private ? messagePeerName(message) : "팀 메시지";
+  const title = message.is_private ? messagePeerName(message) : state.workspace?.name || "팀";
   return `
     <article class="message-thread">
       <div class="message-thread-head">
         ${message.is_private ? renderAvatarWithRole(message.peer_id) : renderTeamAvatar()}
         <div>
           <h2>${escapeHtml(title)}</h2>
-          <p>${message.is_private ? "개인 메시지" : escapeHtml(state.workspace?.name || "팀")}</p>
+          <p>${message.is_private ? "개인 메시지" : "팀 대화"}</p>
         </div>
       </div>
       <div class="chat-stream">
@@ -2394,9 +2387,11 @@ function renderChatBubble(item, isPrivate = false) {
     <div class="chat-line ${mine ? "mine" : "theirs"}">
       ${renderAvatarWithRole(item.author_id, "small")}
       <div class="chat-bubble">
-        <strong class="chat-author">
-          <span>${escapeHtml(profileName(item.author_id))}</span>
-        </strong>
+        ${isPrivate ? "" : `
+          <strong class="chat-author">
+            <span>${escapeHtml(profileName(item.author_id))}</span>
+          </strong>
+        `}
         <span>${escapeHtml(item.body)}</span>
       </div>
     </div>
@@ -2408,7 +2403,7 @@ function renderMessageEmpty() {
     <div class="message-empty">
       ${renderAvatar(state.user?.id, "large", "나")}
       <h2>대화를 선택하세요</h2>
-      <p>왼쪽 목록에서 사람 또는 팀 메시지를 누르면 전체 대화가 열립니다.</p>
+      <p>왼쪽 목록에서 대화를 선택하세요.</p>
     </div>
   `;
 }
@@ -2520,10 +2515,9 @@ function renderAuth() {
       <section class="auth-card">
         <div class="brand">
           <div class="brand-mark">W</div>
-          <span><strong>Work To Do</strong><span>${HAS_SUPABASE ? "Supabase DB 연결 준비됨" : "데모 모드로 미리보기"}</span></span>
+          <span><strong>Work To Do</strong></span>
         </div>
-        <h1>팀 업무를 사람별로 나누고 함께 끝내세요.</h1>
-        <p>각 사용자는 다른 ID/PW로 로그인하고, 본인 업무와 팀 업무를 분리해서 봅니다. Supabase 환경변수를 넣으면 실제 DB/Auth 기반으로 저장됩니다.</p>
+        <h1>로그인</h1>
         <form class="form" data-auth-form>
           <input class="input" name="full_name" placeholder="이름 또는 닉네임">
           <input class="input" name="email" type="email" placeholder="이메일" value="${HAS_SUPABASE ? "" : "admin@worktodo.local"}" required>
@@ -2533,7 +2527,7 @@ function renderAuth() {
             <button class="btn" name="intent" value="signup">회원가입</button>
           </div>
         </form>
-        ${HAS_SUPABASE ? `<p class="muted">회원가입 후 이메일 확인 설정에 따라 바로 로그인되지 않을 수 있습니다.</p>` : renderDemoAccounts()}
+        ${HAS_SUPABASE ? "" : renderDemoAccounts()}
       </section>
     </main>
   `;
@@ -2560,6 +2554,10 @@ function renderDemoAccounts() {
 }
 
 function bindEvents() {
+  document.querySelectorAll(".modal-card").forEach((card) => {
+    card.addEventListener("click", (event) => event.stopPropagation());
+  });
+
   document.querySelectorAll("[data-view]").forEach((button) => {
     button.addEventListener("click", () => {
       state.view = button.dataset.view;

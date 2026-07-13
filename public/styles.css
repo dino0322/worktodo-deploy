@@ -927,16 +927,58 @@ textarea:focus {
 }
 
 .auth-page {
+  position: relative;
+  overflow: hidden;
   display: grid;
   place-items: center;
   min-height: 100vh;
   padding: 40px;
   background:
+    linear-gradient(120deg, color-mix(in srgb, var(--brand) 16%, transparent), transparent 38%),
+    linear-gradient(300deg, color-mix(in srgb, var(--task-team) 15%, transparent), transparent 42%),
     linear-gradient(135deg, color-mix(in srgb, var(--brand) 9%, transparent) 1px, transparent 1px),
     linear-gradient(45deg, color-mix(in srgb, var(--brand-2) 8%, transparent) 1px, transparent 1px),
     var(--bg);
-  background-size: 34px 34px, 46px 46px, auto;
+  background-size: auto, auto, 34px 34px, 46px 46px, auto;
   background-position: center;
+}
+
+.auth-page::before,
+.auth-page::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.auth-page::before {
+  inset: 8vh auto auto 6vw;
+  width: min(620px, 58vw);
+  height: min(460px, 52vh);
+  border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--line));
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--brand) 16%, transparent) 0 18%, transparent 18% 100%),
+    repeating-linear-gradient(0deg, transparent 0 54px, color-mix(in srgb, var(--line) 58%, transparent) 54px 55px),
+    repeating-linear-gradient(90deg, transparent 0 118px, color-mix(in srgb, var(--line) 48%, transparent) 118px 119px),
+    color-mix(in srgb, var(--surface) 72%, transparent);
+  box-shadow: 0 24px 80px rgba(22, 32, 46, 0.12);
+  transform: rotate(-5deg);
+}
+
+.auth-page::after {
+  right: 7vw;
+  bottom: 8vh;
+  width: min(520px, 48vw);
+  height: min(340px, 42vh);
+  border: 1px solid color-mix(in srgb, var(--task-team) 24%, var(--line));
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--task-team) 20%, transparent) 0 20%, transparent 20% 100%),
+    linear-gradient(90deg, transparent 0 26%, color-mix(in srgb, var(--brand-2) 14%, transparent) 26% 50%, transparent 50% 100%),
+    repeating-linear-gradient(0deg, transparent 0 42px, color-mix(in srgb, var(--line) 52%, transparent) 42px 43px),
+    color-mix(in srgb, var(--surface) 76%, transparent);
+  box-shadow: 0 20px 70px rgba(22, 32, 46, 0.11);
+  transform: rotate(4deg);
 }
 
 .empty-workspace-page {
@@ -956,6 +998,8 @@ textarea:focus {
 }
 
 .auth-card {
+  position: relative;
+  z-index: 1;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(16px);
 }
