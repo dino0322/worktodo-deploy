@@ -9,7 +9,8 @@ const supabaseClient = HAS_SUPABASE
   ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
   : null;
 
-const STORE_KEY = "worktodoDemoV3";
+const STORE_KEY = "worktodoDemoV4";
+const THEME_KEY = "worktodoTheme";
 const STATUS_LABEL = {
   todo: "할 일",
   in_progress: "진행 중",
@@ -51,8 +52,11 @@ let state = {
   messages: [],
   activeNoticeId: null,
   activeTaskId: null,
+  activeMessageId: null,
   activeForm: null,
   profileOpen: false,
+  messageScope: "team",
+  theme: localStorage.getItem(THEME_KEY) || "light",
   view: "home",
   filters: {
     search: "",
@@ -70,6 +74,17 @@ function toast(message) {
   toastEl.textContent = message;
   toastEl.classList.add("show");
   window.setTimeout(() => toastEl.classList.remove("show"), 2400);
+}
+
+function applyTheme() {
+  document.body.dataset.theme = state.theme === "dark" ? "dark" : "light";
+}
+
+function toggleTheme() {
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  localStorage.setItem(THEME_KEY, state.theme);
+  applyTheme();
+  render();
 }
 
 function draftKey(kind) {
@@ -139,6 +154,52 @@ function noticeExcerpt(body = "", length = 86) {
   return text.length > length ? `${text.slice(0, length)}...` : text;
 }
 
+function initials(name = "") {
+  const compact = String(name || "사용자").replace(/\s+/g, "");
+  return compact.slice(0, 2).toUpperCase();
+}
+
+function messageThread(message) {
+  return [
+    {
+      id: `${message.id}-root`,
+      author_id: message.sender_id,
+      body: message.body,
+      created_at: message.created_at
+    },
+    ...(message.replies || [])
+  ].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+}
+
+function latestMessage(message) {
+  const thread = messageThread(message);
+  return thread[thread.length - 1] || null;
+}
+
+function messageCountLabel(message) {
+  const count = messageThread(message).length;
+  return count >= 4 ? "4+" : String(count);
+}
+
+function messageIsUnread(message) {
+  const latest = latestMessage(message);
+  if (!latest || latest.author_id === state.user?.id) return false;
+  return !(message.read_by || []).includes(state.user?.id);
+}
+
+function messagePeerName(message) {
+  if (!message.is_private) return "팀 메시지";
+  const thread = messageThread(message);
+  const peer = thread.find((item) => item.author_id !== state.user?.id)?.author_id || message.sender_id;
+  return profileName(peer);
+}
+
+function sortedMessages(scope = state.messageScope) {
+  return visibleMessages()
+    .filter((message) => scope === "private" ? message.is_private : !message.is_private)
+    .sort((a, b) => new Date(latestMessage(b)?.created_at || b.created_at || 0) - new Date(latestMessage(a)?.created_at || a.created_at || 0));
+}
+
 function activeDemoWorkspace(data) {
   const workspaces = data.workspaces?.length ? data.workspaces : [data.workspace].filter(Boolean);
   return workspaces.find((workspace) => workspace.id === data.activeWorkspaceId) || workspaces[0];
@@ -154,7 +215,11 @@ function normalizeDemoData(data) {
   data.comments = data.comments || [];
   data.notices = data.notices || [];
   data.questions = data.questions || [];
-  data.messages = data.messages || [];
+  data.messages = (data.messages || []).map((message) => ({
+    ...message,
+    replies: message.replies || [],
+    read_by: message.read_by || []
+  }));
   return data;
 }
 
@@ -308,9 +373,14 @@ function readDemo() {
         id: uid(),
         workspace_id: workspaceId,
         sender_id: minjiId,
-        body: "제 개인 업무 중 일부를 팀 업무로 바꿔도 될까요?",
+        body: "오늘 팀 업무 중 배포 체크리스트 먼저 볼게요.",
         is_private: false,
-        replies: [],
+        replies: [
+          { id: uid(), author_id: hyunId, body: "좋아요. 저는 Supabase 쪽 확인하겠습니다.", created_at: new Date().toISOString() },
+          { id: uid(), author_id: adminId, body: "완료되면 공지에 짧게 남겨주세요.", created_at: new Date().toISOString() },
+          { id: uid(), author_id: minjiId, body: "네, 끝나면 바로 공유하겠습니다.", created_at: new Date().toISOString() }
+        ],
+        read_by: [],
         created_at: new Date().toISOString()
       },
       {
@@ -319,7 +389,20 @@ function readDemo() {
         sender_id: hyunId,
         body: "배포 권한 관련해서 팀장님과 따로 확인하고 싶습니다.",
         is_private: true,
+        replies: [
+          { id: uid(), author_id: adminId, body: "확인했습니다. 필요한 권한 범위만 정리해서 보내주세요.", created_at: new Date().toISOString() }
+        ],
+        read_by: [],
+        created_at: new Date().toISOString()
+      },
+      {
+        id: uid(),
+        workspace_id: workspaceId,
+        sender_id: adminId,
+        body: "오후에는 팀별 담당자만 짧게 싱크 맞추겠습니다.",
+        is_private: false,
         replies: [],
+        read_by: [adminId],
         created_at: new Date().toISOString()
       }
     ],
@@ -502,6 +585,7 @@ function makeDemoApi() {
         workspace_id: workspace.id,
         sender_id: data.sessionUserId,
         replies: [],
+        read_by: [data.sessionUserId],
         created_at: new Date().toISOString()
       };
       data.messages = [record, ...(data.messages || [])];
@@ -516,9 +600,21 @@ function makeDemoApi() {
             replies: [
               ...(message.replies || []),
               { id: uid(), author_id: data.sessionUserId, body, created_at: new Date().toISOString() }
-            ]
+            ],
+            read_by: [data.sessionUserId]
           }
         : message);
+      writeDemo(data);
+    },
+    async markMessageRead(messageId) {
+      const data = readDemo();
+      data.messages = (data.messages || []).map((message) => {
+        if (message.id !== messageId) return message;
+        return {
+          ...message,
+          read_by: Array.from(new Set([...(message.read_by || []), data.sessionUserId]))
+        };
+      });
       writeDemo(data);
     }
   };
@@ -578,6 +674,7 @@ function makeLiveApi() {
       if (memberError) throw memberError;
 
       let workspace;
+      let workspaces = [];
       let role = memberships?.[0]?.role || "admin";
 
       if (!memberships?.length) {
@@ -593,14 +690,17 @@ function makeLiveApi() {
           .insert({ workspace_id: workspace.id, user_id: user.id, role: "admin", status: "active" });
         if (insertMemberError) throw insertMemberError;
         role = "admin";
+        workspaces = [workspace];
       } else {
+        const workspaceIds = memberships.map((item) => item.workspace_id);
         const { data: workspaceData, error: workspaceFetchError } = await supabaseClient
           .from("workspaces")
           .select("*")
-          .eq("id", memberships[0].workspace_id)
-          .single();
+          .in("id", workspaceIds);
         if (workspaceFetchError) throw workspaceFetchError;
-        workspace = workspaceData;
+        workspaces = workspaceData || [];
+        workspace = workspaces.find((item) => item.id === state.workspace?.id) || workspaces[0];
+        role = memberships.find((item) => item.workspace_id === workspace?.id)?.role || "member";
       }
 
       const [
@@ -634,7 +734,7 @@ function makeLiveApi() {
 
       return {
         workspace,
-        workspaces: [workspace],
+        workspaces,
         role,
         profiles: profiles || [],
         projects: projectsResult.data || [],
@@ -642,7 +742,11 @@ function makeLiveApi() {
         comments: commentsResult.data || [],
         notices: noticesResult.data || [],
         questions: (questionsResult.data || []).map((question) => ({ ...question, replies: question.replies || [] })),
-        messages: (messagesResult.data || []).map((message) => ({ ...message, replies: message.replies || [] }))
+        messages: (messagesResult.data || []).map((message) => ({
+          ...message,
+          replies: message.replies || [],
+          read_by: message.read_by || []
+        }))
       };
     },
     async createTask(task) {
@@ -658,8 +762,8 @@ function makeLiveApi() {
       if (error) throw error;
       return data;
     },
-    async setWorkspace() {
-      throw new Error("DB 모드의 다중 팀 전환은 멤버십 API 확장 후 사용할 수 있습니다.");
+    async setWorkspace(workspaceId) {
+      state.workspace = state.workspaces.find((workspace) => workspace.id === workspaceId) || state.workspace;
     },
     async updateTask(id, patch) {
       const { data, error } = await supabaseClient
@@ -727,7 +831,8 @@ function makeLiveApi() {
           ...message,
           workspace_id: state.workspace.id,
           sender_id: state.user.id,
-          replies: []
+          replies: [],
+          read_by: [state.user.id]
         })
         .select("*")
         .single();
@@ -742,7 +847,17 @@ function makeLiveApi() {
       ];
       const { error } = await supabaseClient
         .from("messages")
-        .update({ replies })
+        .update({ replies, read_by: [state.user.id] })
+        .eq("id", messageId);
+      if (error) throw error;
+    },
+    async markMessageRead(messageId) {
+      const message = state.messages.find((item) => item.id === messageId);
+      if (!message || (message.read_by || []).includes(state.user.id)) return;
+      const readBy = Array.from(new Set([...(message.read_by || []), state.user.id]));
+      const { error } = await supabaseClient
+        .from("messages")
+        .update({ read_by: readBy })
         .eq("id", messageId);
       if (error) throw error;
     }
@@ -820,23 +935,26 @@ function roleBadge(role = state.role, showText = false) {
 function workspaceSelect() {
   if (!state.workspaces?.length) return `<span class="workspace-chip">${escapeHtml(state.workspace?.name || "워크스페이스")}</span>`;
   return `
-    <label class="workspace-select">
-      <span>팀</span>
+    <label class="workspace-picker">
+      <span class="workspace-kicker">팀 전환</span>
+      <span class="workspace-name">${escapeHtml(state.workspace?.name || "워크스페이스")}</span>
       <select data-workspace-switch aria-label="팀 선택">
         ${state.workspaces.map((workspace) => option(workspace.id, workspace.name, state.workspace?.id)).join("")}
       </select>
+      <span class="workspace-arrow">⌄</span>
     </label>
   `;
 }
 
 function render() {
+  applyTheme();
   if (!state.user) {
     renderAuth();
     return;
   }
   const profile = currentProfile();
   app.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell ${state.theme === "dark" ? "dark" : "light"}">
       <header class="topbar">
         <div class="brand">
           <div class="brand-mark">W</div>
@@ -844,10 +962,11 @@ function render() {
         </div>
         <nav class="top-nav" aria-label="빠른 메뉴">
           ${topNavButton("messages", "메시지")}
-          ${topNavButton("questions", "질문")}
+          ${topNavButton("questions", "질문 게시판")}
         </nav>
         <div class="top-actions">
           ${workspaceSelect()}
+          <button class="icon-button theme-toggle" data-action="toggle-theme" aria-label="다크모드 전환" title="다크모드 전환">${state.theme === "dark" ? "☀" : "◐"}</button>
           <button class="role-chip role-button" data-action="open-profile">${roleBadge(state.role, true)}<span>${escapeHtml(profile.full_name || profile.email)}</span></button>
           <span class="mode-chip ${state.mode === "live" ? "live" : ""}">${state.mode === "live" ? "DB 연결됨" : "데모 모드"}</span>
           <button class="btn ghost" data-action="logout">로그아웃</button>
@@ -869,7 +988,9 @@ function render() {
           </div>
         </aside>
         <main class="main">
-          ${renderPage()}
+          <div class="page-panel" data-current-view="${state.view}">
+            ${renderPage()}
+          </div>
         </main>
       </div>
       ${renderNoticeModal()}
@@ -1028,6 +1149,15 @@ function renderFilters() {
   `;
 }
 
+function renderTaskScopeTabs(scope) {
+  return `
+    <div class="task-scope-tabs" aria-label="업무 범위">
+      <button class="${scope === "mine" ? "active" : ""}" data-view="mine">내 업무</button>
+      <button class="${scope === "team" ? "active" : ""}" data-view="team">팀 업무</button>
+    </div>
+  `;
+}
+
 function option(value, label, current) {
   return `<option value="${escapeHtml(value)}" ${value === current ? "selected" : ""}>${escapeHtml(label)}</option>`;
 }
@@ -1040,9 +1170,12 @@ function renderTaskList(scope) {
   const tasks = filteredTasks(scope);
   return `
     ${renderHead(title, body, `<button class="btn primary" data-action="open-form" data-form-kind="task">새 업무</button>`)}
-    ${renderStats()}
-    ${renderFilters()}
-    <section class="list">
+    <section class="task-workspace ${scope === "team" ? "team-scope" : "mine-scope"}">
+      ${renderTaskScopeTabs(scope)}
+      ${renderStats()}
+      ${renderFilters()}
+    </section>
+    <section class="list task-list">
       ${tasks.length ? tasks.map(renderTaskCard).join("") : `<div class="empty">조건에 맞는 업무가 없습니다.</div>`}
     </section>
   `;
@@ -1327,9 +1460,12 @@ function renderMessageForm() {
   const draft = loadDraft("message");
   return `
     <form class="form" data-message-form data-draft="message">
+      <select name="message_type" aria-label="메시지 유형">
+        ${option("team", "팀 메시지", draft.message_type || (draft.is_private === "on" ? "private" : "team"))}
+        ${option("private", "개인 메시지", draft.message_type || (draft.is_private === "on" ? "private" : "team"))}
+      </select>
       <textarea name="body" placeholder="메시지 내용을 입력하세요" required>${escapeHtml(draft.body || "")}</textarea>
-      <label><input type="checkbox" name="is_private" ${draft.is_private === "on" ? "checked" : ""}> 비공개로 보내기</label>
-      <button class="btn primary">메시지 저장</button>
+      <button class="btn primary">메시지 전송</button>
     </form>
   `;
 }
@@ -1381,38 +1517,92 @@ function renderQuestionCard(question) {
 }
 
 function renderMessages() {
-  const messages = visibleMessages();
+  const messages = sortedMessages();
+  const activeMessage = messages.find((message) => message.id === state.activeMessageId);
   return `
-    ${renderHead("메시지", "개인 상담이나 운영자에게만 보낼 내용을 남깁니다.", `<button class="btn primary" data-action="open-form" data-form-kind="message">메시지 작성</button>`)}
-    <section class="list">
-      ${messages.length ? messages.map(renderMessageCard).join("") : `<div class="empty">표시할 메시지가 없습니다.</div>`}
+    ${renderHead("메시지", "팀 대화와 개인 대화를 나눠서 확인합니다.", `<button class="btn primary" data-action="open-form" data-form-kind="message">메시지 작성</button>`)}
+    <section class="message-shell">
+      <div class="message-list-panel">
+        <div class="message-tabs" aria-label="메시지 유형">
+          <button class="${state.messageScope === "team" ? "active" : ""}" data-message-scope="team">팀 메시지</button>
+          <button class="${state.messageScope === "private" ? "active" : ""}" data-message-scope="private">개인 메시지</button>
+        </div>
+        <div class="message-list">
+          ${messages.length ? messages.map(renderMessageRow).join("") : `<div class="empty small">표시할 메시지가 없습니다.</div>`}
+        </div>
+      </div>
+      <div class="message-detail-panel">
+        ${activeMessage ? renderMessageDetail(activeMessage) : renderMessageEmpty()}
+      </div>
     </section>
   `;
 }
 
-function renderMessageCard(message) {
-  const replies = message.replies || [];
-  const canReply = isManager();
+function renderMessageRow(message) {
+  const latest = latestMessage(message);
+  const unread = messageIsUnread(message);
+  const name = messagePeerName(message);
+  const badge = messageCountLabel(message);
+  const latestText = latest?.body || message.body;
+  const avatarText = message.is_private ? initials(name) : "팀";
   return `
-    <article class="task-card">
-      <div class="task-top">
+    <button class="message-row ${unread ? "unread" : ""} ${state.activeMessageId === message.id ? "active" : ""}" data-action="open-message" data-message-id="${message.id}">
+      <span class="person-avatar ${message.is_private ? "private" : "team"}">${escapeHtml(avatarText)}</span>
+      <span class="message-row-main">
+        <span class="message-row-name">${escapeHtml(name)}</span>
+        <span class="message-row-preview">${escapeHtml(latestText)}</span>
+      </span>
+      <span class="message-row-side">
+        <span class="message-count">${escapeHtml(badge)}</span>
+        ${unread ? `<span class="unread-dot" aria-label="읽지 않은 메시지"></span>` : ""}
+      </span>
+    </button>
+  `;
+}
+
+function renderMessageDetail(message) {
+  const canReply = isManager();
+  const title = message.is_private ? messagePeerName(message) : "팀 메시지";
+  return `
+    <article class="message-thread">
+      <div class="message-thread-head">
+        <span class="person-avatar ${message.is_private ? "private" : "team"}">${escapeHtml(message.is_private ? initials(title) : "팀")}</span>
         <div>
-          <h2 class="task-title">${message.is_private ? "비공개 메시지" : "공개 메시지"}</h2>
-          <p class="task-desc">${escapeHtml(message.body)}</p>
+          <h2>${escapeHtml(title)}</h2>
+          <p>${message.is_private ? "개인 메시지" : escapeHtml(state.workspace?.name || "팀")} · ${escapeHtml(messageCountLabel(message))}</p>
         </div>
-        <span class="pill ${message.is_private ? "high" : "low"}">${message.is_private ? "비공개" : "공개"}</span>
       </div>
-      <div class="task-meta">
-        <span class="pill">작성 ${escapeHtml(profileName(message.sender_id))}</span>
+      <div class="chat-stream">
+        ${messageThread(message).map(renderChatBubble).join("")}
       </div>
-      <div class="comment-list">
-        ${replies.length ? replies.map(renderInlineReply).join("") : `<div class="muted">아직 답장이 없습니다.</div>`}
-        <form class="form ${canReply ? "" : "hidden"}" data-message-reply-form="${message.id}">
-          <input class="input" name="body" placeholder="답장을 입력하세요" required>
-          <button class="btn">답장 저장</button>
-        </form>
-      </div>
+      <form class="chat-reply ${canReply || !message.is_private ? "" : "hidden"}" data-message-reply-form="${message.id}">
+        <input class="input" name="body" placeholder="답장을 입력하세요" required>
+        <button class="btn primary">전송</button>
+      </form>
     </article>
+  `;
+}
+
+function renderChatBubble(item) {
+  const mine = item.author_id === state.user?.id;
+  return `
+    <div class="chat-line ${mine ? "mine" : "theirs"}">
+      ${mine ? "" : `<span class="person-avatar small">${escapeHtml(initials(profileName(item.author_id)))}</span>`}
+      <div class="chat-bubble">
+        <strong>${escapeHtml(profileName(item.author_id))}</strong>
+        <span>${escapeHtml(item.body)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderMessageEmpty() {
+  return `
+    <div class="message-empty">
+      <div class="person-avatar large">人</div>
+      <h2>대화를 선택하세요</h2>
+      <p>왼쪽 목록에서 사람 또는 팀 메시지를 누르면 전체 대화가 열립니다.</p>
+    </div>
   `;
 }
 
@@ -1445,6 +1635,7 @@ function renderProfile() {
 }
 
 function renderAuth() {
+  applyTheme();
   app.innerHTML = `
     <main class="auth-page">
       <section class="auth-card">
@@ -1489,11 +1680,14 @@ function bindEvents() {
     render();
   });
 
+  document.querySelector("[data-action='toggle-theme']")?.addEventListener("click", toggleTheme);
+
   document.querySelector("[data-workspace-switch]")?.addEventListener("change", async (event) => {
     try {
       await api.setWorkspace(event.target.value);
       state.view = "home";
       state.activeNoticeId = null;
+      state.activeMessageId = null;
       await refreshData();
       render();
       toast("팀을 전환했습니다.");
@@ -1521,6 +1715,29 @@ function bindEvents() {
       state.activeTaskId = button.dataset.taskId;
       render();
     });
+  });
+
+  document.querySelectorAll("[data-message-scope]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.messageScope = button.dataset.messageScope;
+      state.activeMessageId = null;
+      render();
+    });
+  });
+
+  document.querySelector(".message-list")?.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-action='open-message']");
+    if (!button) return;
+    state.activeMessageId = button.dataset.messageId;
+    render();
+    try {
+      await api.markMessageRead?.(button.dataset.messageId);
+      await refreshData();
+      state.activeMessageId = button.dataset.messageId;
+      render();
+    } catch (error) {
+      toast(error.message || "읽음 처리에 실패했습니다.");
+    }
   });
 
   document.querySelectorAll("[data-action='close-notice']").forEach((item) => {
@@ -1719,13 +1936,15 @@ async function handleQuestionReplySubmit(event) {
 async function handleMessageSubmit(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const isPrivate = form.get("message_type") === "private";
   try {
     await api.createMessage({
       body: form.get("body")?.toString().trim(),
-      is_private: form.get("is_private") === "on"
+      is_private: isPrivate
     });
     clearDraft("message");
     state.activeForm = null;
+    state.messageScope = isPrivate ? "private" : "team";
     await refreshData();
     render();
     toast("메시지를 저장했습니다.");

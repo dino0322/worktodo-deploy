@@ -94,9 +94,12 @@ create table if not exists public.messages (
   body text not null,
   is_private boolean not null default false,
   replies jsonb not null default '[]'::jsonb,
+  read_by jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.messages add column if not exists read_by jsonb not null default '[]'::jsonb;
 
 create index if not exists workspace_members_user_idx on public.workspace_members(user_id);
 create index if not exists tasks_workspace_idx on public.tasks(workspace_id);
@@ -359,8 +362,23 @@ with check (
 );
 
 drop policy if exists "messages update managers" on public.messages;
-create policy "messages update managers"
+drop policy if exists "messages update visible participants" on public.messages;
+create policy "messages update visible participants"
 on public.messages for update
 to authenticated
-using (public.is_workspace_manager(workspace_id))
-with check (public.is_workspace_manager(workspace_id));
+using (
+  public.is_workspace_member(workspace_id)
+  and (
+    sender_id = auth.uid()
+    or public.is_workspace_manager(workspace_id)
+    or is_private = false
+  )
+)
+with check (
+  public.is_workspace_member(workspace_id)
+  and (
+    sender_id = auth.uid()
+    or public.is_workspace_manager(workspace_id)
+    or is_private = false
+  )
+);
