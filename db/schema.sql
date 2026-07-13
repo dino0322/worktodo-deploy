@@ -5,7 +5,6 @@ create table if not exists public.profiles (
   email text not null,
   full_name text not null,
   position text,
-  avatar_url text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -30,7 +29,6 @@ create table if not exists public.workspace_members (
 );
 
 alter table public.profiles add column if not exists position text;
-alter table public.profiles add column if not exists avatar_url text;
 alter table public.workspaces add column if not exists invite_code text unique default upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
 alter table public.workspace_members drop constraint if exists workspace_members_role_check;
 alter table public.workspace_members add constraint workspace_members_role_check check (role in ('super_admin', 'admin', 'manager', 'member', 'guest'));

@@ -177,8 +177,7 @@ function currentProfile() {
   return state.profiles.find((profile) => profile.id === state.user?.id) || {
     id: state.user?.id,
     email: state.user?.email,
-    full_name: state.user?.name || state.user?.email || "사용자",
-    avatar_url: state.user?.avatar_url || ""
+    full_name: state.user?.name || state.user?.email || "사용자"
   };
 }
 
@@ -221,10 +220,7 @@ function renderAvatar(userId, size = "", fallbackLabel = "") {
   const profile = profileById(userId);
   const label = fallbackLabel || profile?.full_name || profile?.email || "사용자";
   const classes = ["person-avatar", size].filter(Boolean).join(" ");
-  const image = profile?.avatar_url
-    ? `<img src="${escapeHtml(profile.avatar_url)}" alt="">`
-    : escapeHtml(initials(label));
-  return `<span class="${classes}" style="${avatarStyle(userId || label)}">${image}</span>`;
+  return `<span class="${classes}" style="${avatarStyle(userId || label)}">${escapeHtml(initials(label))}</span>`;
 }
 
 function renderAvatarWithRole(userId, size = "", fallbackLabel = "") {
@@ -381,11 +377,11 @@ function readDemo() {
   return normalizeDemoData({
     sessionUserId: null,
     users: [
-      { id: adminId, email: "admin@worktodo.local", password: "admin123", full_name: "전체관리자", position: "서비스 관리자", avatar_url: "" },
-      { id: hyunId, email: "lead@worktodo.local", password: "lead123", full_name: "이현우", position: "기획 팀장", avatar_url: "" },
-      { id: managerId, email: "manager@worktodo.local", password: "manager123", full_name: "서지윤", position: "프로젝트 매니저", avatar_url: "" },
-      { id: minjiId, email: "member@worktodo.local", password: "member123", full_name: "강민지", position: "운영 담당", avatar_url: "" },
-      { id: guestId, email: "guest@worktodo.local", password: "guest123", full_name: "박준호", position: "외부 게스트", avatar_url: "" }
+      { id: adminId, email: "admin@worktodo.local", password: "admin123", full_name: "전체관리자", position: "서비스 관리자" },
+      { id: hyunId, email: "lead@worktodo.local", password: "lead123", full_name: "이현우", position: "기획 팀장" },
+      { id: managerId, email: "manager@worktodo.local", password: "manager123", full_name: "서지윤", position: "프로젝트 매니저" },
+      { id: minjiId, email: "member@worktodo.local", password: "member123", full_name: "강민지", position: "운영 담당" },
+      { id: guestId, email: "guest@worktodo.local", password: "guest123", full_name: "박준호", position: "외부 게스트" }
     ],
     activeWorkspaceId: workspaceId,
     workspaces: [
@@ -605,7 +601,7 @@ function makeDemoApi() {
     async session() {
       const data = readDemo();
       const user = data.users.find((item) => item.id === data.sessionUserId) || null;
-      return user ? { id: user.id, email: user.email, name: user.full_name, avatar_url: user.avatar_url || "" } : null;
+      return user ? { id: user.id, email: user.email, name: user.full_name } : null;
     },
     async signIn(email, password) {
       const data = readDemo();
@@ -613,18 +609,17 @@ function makeDemoApi() {
       if (!user) throw new Error("데모 계정을 찾을 수 없습니다.");
       data.sessionUserId = user.id;
       writeDemo(data);
-      return { id: user.id, email: user.email, name: user.full_name, avatar_url: user.avatar_url || "" };
+      return { id: user.id, email: user.email, name: user.full_name };
     },
     async signUp(email, password, profile = {}) {
       const data = readDemo();
       if (data.users.some((item) => item.email === email)) throw new Error("이미 존재하는 이메일입니다.");
       const fullName = profile.full_name?.trim() || email;
-      const avatarUrl = profile.avatar_url?.trim() || "";
-      const user = { id: uid(), email, password, full_name: fullName, avatar_url: avatarUrl };
+      const user = { id: uid(), email, password, full_name: fullName };
       data.users.push(user);
       data.sessionUserId = user.id;
       writeDemo(data);
-      return { id: user.id, email: user.email, name: user.full_name, avatar_url: user.avatar_url };
+      return { id: user.id, email: user.email, name: user.full_name };
     },
     async signOut() {
       const data = readDemo();
@@ -644,10 +639,10 @@ function makeDemoApi() {
         allWorkspaces: data.workspaces,
         allMemberships: data.members.filter((item) => item.status !== "disabled"),
         allTasks: data.tasks,
-        role: member?.role || "member",
+        role: member?.role || "guest",
         members: workspaceMembers,
         invites: (data.invites || []).filter((item) => item.workspace_id === workspace?.id),
-        profiles: data.users.map(({ id, email, full_name, position, avatar_url }) => ({ id, email, full_name, position, avatar_url })),
+        profiles: data.users.map(({ id, email, full_name, position }) => ({ id, email, full_name, position })),
         projects: data.projects.filter((item) => item.workspace_id === workspace?.id),
         tasks: data.tasks.filter((item) => item.workspace_id === workspace?.id),
         comments: data.comments,
@@ -896,8 +891,7 @@ function makeLiveApi() {
       return user ? {
         id: user.id,
         email: user.email,
-        name: user.user_metadata?.full_name || user.email,
-        avatar_url: user.user_metadata?.avatar_url || ""
+        name: user.user_metadata?.full_name || user.email
       } : null;
     },
     async signIn(email, password) {
@@ -906,25 +900,22 @@ function makeLiveApi() {
       return {
         id: data.user.id,
         email: data.user.email,
-        name: data.user.user_metadata?.full_name || data.user.email,
-        avatar_url: data.user.user_metadata?.avatar_url || ""
+        name: data.user.user_metadata?.full_name || data.user.email
       };
     },
     async signUp(email, password, profile = {}) {
       const fullName = profile.full_name?.trim() || email;
-      const avatarUrl = profile.avatar_url?.trim() || "";
       const { data, error } = await supabaseClient.auth.signUp({
         email,
         password,
-        options: { data: { full_name: fullName, avatar_url: avatarUrl } }
+        options: { data: { full_name: fullName } }
       });
       if (error) throw error;
       if (!data.user) throw new Error("회원가입 응답이 비어 있습니다.");
       return {
         id: data.user.id,
         email: data.user.email,
-        name: fullName || data.user.email,
-        avatar_url: avatarUrl
+        name: fullName || data.user.email
       };
     },
     async signOut() {
@@ -937,8 +928,7 @@ function makeLiveApi() {
         .upsert({
           id: user.id,
           email: user.email,
-          full_name: user.name || user.email,
-          avatar_url: user.avatar_url || ""
+          full_name: user.name || user.email
         }, { onConflict: "id", ignoreDuplicates: true });
 
       let { data: memberships, error: memberError } = await supabaseClient
@@ -967,7 +957,7 @@ function makeLiveApi() {
           role: "guest",
           members: [],
           invites: [],
-          profiles: [{ id: user.id, email: user.email, full_name: user.name || user.email, avatar_url: user.avatar_url || "" }],
+          profiles: [{ id: user.id, email: user.email, full_name: user.name || user.email }],
           projects: [],
           tasks: [],
           comments: [],
@@ -1546,6 +1536,7 @@ function renderNoWorkspace() {
           <div class="brand-mark">W</div>
           <span><strong>Work To Do</strong><span>${escapeHtml(profile.full_name || profile.email || "새 사용자")}</span></span>
         </div>
+        <div class="guest-state">${roleBadge("guest", true)}</div>
         <h1>아직 참여 중인 팀이 없습니다.</h1>
         <p>팀 초대를 받으면 해당 팀 업무가 열립니다. 새 팀을 만들면 바로 관리자로 시작할 수 있습니다.</p>
         <form class="form" data-create-workspace-form>
@@ -2248,10 +2239,6 @@ function renderProfileEditModal() {
               <span class="settings-label">이메일</span>
               <input class="settings-input" type="email" name="email" value="${escapeHtml(profile.email || state.user.email || "")}" required>
             </label>
-            <label class="settings-row editable">
-              <span class="settings-label">프로필 이미지</span>
-              <input class="settings-input" name="avatar_url" placeholder="https://..." value="${escapeHtml(profile.avatar_url || "")}">
-            </label>
           </div>
           <div class="settings-list locked-list">
             <div class="settings-row locked">
@@ -2479,10 +2466,6 @@ function renderProfile() {
             <span class="settings-label">이메일</span>
             <span class="settings-value">${escapeHtml(email)}</span>
           </div>
-          <div class="settings-row">
-            <span class="settings-label">프로필 이미지</span>
-            <span class="settings-value">${profile.avatar_url ? "설정됨" : "기본 아바타"}</span>
-          </div>
         </div>
       </section>
 
@@ -2555,9 +2538,6 @@ function renderAuth() {
           ` : ""}
           <input class="input" name="email" type="email" placeholder="이메일" value="${HAS_SUPABASE || isSignup ? "" : "admin@worktodo.local"}" required>
           <input class="input" name="password" type="password" placeholder="비밀번호" value="${HAS_SUPABASE || isSignup ? "" : "admin123"}" required>
-          ${isSignup ? `
-            <input class="input" name="avatar_url" placeholder="프로필 이미지 URL">
-          ` : ""}
           <button class="btn primary" name="intent" value="${isSignup ? "signup" : "signin"}">${isSignup ? "계정 생성" : "로그인"}</button>
         </form>
         <div class="auth-mode-switch">
@@ -2967,8 +2947,7 @@ function bindAuthEvents() {
     const password = form.get("password")?.toString();
     const intent = submitter?.value || state.authMode;
     const profile = {
-      full_name: form.get("full_name")?.toString().trim(),
-      avatar_url: form.get("avatar_url")?.toString().trim()
+      full_name: form.get("full_name")?.toString().trim()
     };
     try {
       state.user = intent === "signup"
@@ -3209,8 +3188,7 @@ async function handleProfileEditSubmit(event) {
   try {
     await api.updateProfile({
       full_name: form.get("full_name")?.toString().trim(),
-      email: form.get("email")?.toString().trim(),
-      avatar_url: form.get("avatar_url")?.toString().trim()
+      email: form.get("email")?.toString().trim()
     });
     state.profileEditOpen = false;
     await refreshData();

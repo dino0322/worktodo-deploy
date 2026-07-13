@@ -211,7 +211,6 @@
 - email
 - password_hash 또는 auth_provider_user_id
 - name
-- avatar_url
 - created_at
 - updated_at
 
