@@ -9,7 +9,7 @@ const supabaseClient = HAS_SUPABASE
   ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
   : null;
 
-const STORE_KEY = "worktodoDemoV2";
+const STORE_KEY = "worktodoDemoV3";
 const STATUS_LABEL = {
   todo: "할 일",
   in_progress: "진행 중",
@@ -329,7 +329,7 @@ function readDemo() {
         workspace_id: workspaceId,
         author_id: adminId,
         title: "이번 주 목표",
-        body: "업무 흐름은 먼저 간단하게 열고, DB 연결과 배포 안정성을 우선 확인합니다. 홈에서는 핵심 공지만 짧게 보이지만, 공지 카드의 전문 보기 버튼을 누르면 세부 일정, 담당자, 주의사항을 모두 확인할 수 있습니다. 이번 주에는 GitHub Pages 배포, Supabase 스키마 점검, 팀별 권한 확인을 순서대로 마무리합니다.",
+        body: "업무 흐름은 먼저 간단하게 열고, DB 연결과 배포 안정성을 우선 확인합니다. 홈에서는 핵심 공지 제목만 짧게 보이고, 제목을 누르면 세부 일정, 담당자, 주의사항을 팝업으로 확인할 수 있습니다. 이번 주에는 GitHub Pages 배포, Supabase 스키마 점검, 팀별 권한 확인을 순서대로 마무리합니다.",
         pinned: true,
         importance: "important",
         created_at: new Date().toISOString()
@@ -1217,14 +1217,12 @@ function renderNotices() {
 
 function renderNoticeCard(notice, compact = false) {
   return `
-    <article class="notice ${compact ? "compact" : ""}">
+    <article class="notice ${compact ? "compact" : ""}" data-action="open-notice" data-notice-id="${notice.id}">
       <div class="task-meta">
         ${notice.pinned ? `<span class="pill high">고정</span>` : ""}
         <span class="pill">${escapeHtml(profileName(notice.author_id))}</span>
       </div>
       <h3>${escapeHtml(notice.title)}</h3>
-      <p class="muted">${escapeHtml(noticeExcerpt(notice.body, compact ? 72 : 120))}</p>
-      <button class="btn" data-action="open-notice" data-notice-id="${notice.id}">전문 보기</button>
     </article>
   `;
 }
