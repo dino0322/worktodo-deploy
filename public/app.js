@@ -82,6 +82,7 @@ let state = {
   creatingWorkspaceFromMenu: false,
   memberMenu: null,
   activeForm: null,
+  inviteOpen: false,
   profileOpen: false,
   profileEditOpen: false,
   workspaceMenuOpen: false,
@@ -1292,7 +1293,7 @@ async function refreshData() {
   state = { ...state, ...data };
 }
 
-function filteredTasks(scope = state.view) {
+function filteredTasks(scope = state.view, options = {}) {
   let tasks = [...state.tasks];
   if (scope === "mine") {
     tasks = tasks.filter((task) => task.assignee_id === state.user.id || task.creator_id === state.user.id);
@@ -1309,7 +1310,7 @@ function filteredTasks(scope = state.view) {
         .includes(search)
     );
   }
-  if (state.filters.status !== "all") tasks = tasks.filter((task) => task.status === state.filters.status);
+  if (!options.skipStatus && state.filters.status !== "all") tasks = tasks.filter((task) => task.status === state.filters.status);
   if (state.filters.assignee !== "all") tasks = tasks.filter((task) => task.assignee_id === state.filters.assignee);
   if (state.filters.priority !== "all") tasks = tasks.filter((task) => task.priority === state.filters.priority);
   return tasks;
@@ -1517,6 +1518,7 @@ function render() {
       ${renderNoticeModal()}
       ${renderTaskModal()}
       ${renderFormModal()}
+      ${renderInviteModal()}
       ${renderProfileEditModal()}
       ${renderMemberActionMenu()}
       ${renderMemberEditModal()}
@@ -1719,6 +1721,7 @@ function renderTaskList(scope = state.taskScope) {
     ? "팀 전체 업무를 담당자, 상태, 우선순위 기준으로 훑어봅니다."
     : "나에게 배정되었거나 내가 만든 업무를 먼저 처리합니다.";
   const tasks = filteredTasks(scope);
+  const boardTasks = filteredTasks(scope, { skipStatus: true });
   return `
     <div class="task-page ${scope === "team" ? "task-page-team" : "task-page-mine"}">
       ${renderHead("업무", `${title}를 기준으로 업무를 정리합니다. ${body}`, `<button class="btn primary" data-action="open-form" data-form-kind="task">새 업무</button>`)}
@@ -1727,7 +1730,7 @@ function renderTaskList(scope = state.taskScope) {
         ${renderStats()}
         ${renderFilters()}
       </section>
-      ${renderTaskBoard(tasks)}
+      ${renderTaskBoard(boardTasks)}
       <section class="list task-list">
         ${tasks.length ? tasks.map(renderTaskCard).join("") : `<div class="empty">조건에 맞는 업무가 없습니다.</div>`}
       </section>
@@ -1853,10 +1856,11 @@ function renderDashboard() {
       review: assigned.filter((task) => task.status === "review").length
     };
   });
+  const action = isAdmin() ? `<button class="btn primary" data-action="open-invite">팀 초대</button>` : "";
   return `
     ${renderHead(isAdmin() ? "관리자" : "팀원", isAdmin()
       ? "인원 상태, 팀 초대, 팀 전체 진행 상황을 확인합니다."
-      : "팀원을 확인하고 우클릭으로 개인 메시지를 시작합니다.")}
+      : "팀원을 확인하고 우클릭으로 개인 메시지를 시작합니다.", action)}
     ${renderStats()}
     <div class="grid stats">
       <div class="stat-card"><span>답변대기 질문</span><strong>${data.openQuestions}</strong></div>
@@ -1877,29 +1881,14 @@ function renderDashboard() {
           </tbody>
         </table>
       </section>
-      ${isAdmin() ? `<aside class="card invite-card">
-        <h2>팀 초대</h2>
-        <div class="invite-link-box">
-          <span>초대 코드</span>
-          <strong>${escapeHtml(inviteCode())}</strong>
-          <button class="btn" data-action="copy-invite">초대 주소 복사</button>
-        </div>
-        <form class="form" data-invite-form>
-          <input class="input" name="email" type="email" placeholder="초대할 이메일" required ${isAdmin() ? "" : "disabled"}>
-          <select name="role" ${isAdmin() ? "" : "disabled"}>
-            ${assignableRoles().map((role) => option(role, ROLE_LABEL[role], "member")).join("")}
-          </select>
-          <button class="btn primary" ${isAdmin() ? "" : "disabled"}>이메일 초대</button>
-        </form>
+      <aside class="card invite-card">
+        <h2>팀 요약</h2>
         <div class="invite-list">
-          ${state.invites.length ? state.invites.slice(0, 5).map((invite) => `
-            <div class="invite-item">
-              <strong>${escapeHtml(invite.email)}</strong>
-              <span>${escapeHtml(ROLE_LABEL[invite.role] || invite.role)} · ${escapeHtml(invite.code || invite.status || "초대중")}</span>
-            </div>
-          `).join("") : `<div class="empty small">아직 보낸 초대가 없습니다.</div>`}
+          <div class="invite-item"><strong>${state.members.length}명</strong><span>참여 인원</span></div>
+          <div class="invite-item"><strong>${state.tasks.filter((task) => task.status !== "done").length}건</strong><span>진행 중 업무</span></div>
+          <div class="invite-item"><strong>${state.invites.length}건</strong><span>보낸 초대</span></div>
         </div>
-      </aside>` : ""}
+      </aside>
     </div>
     <div class="content-grid">
       <section class="card">
@@ -1947,7 +1936,7 @@ function renderGlobalAdminDashboard() {
   const totalOpenTasks = allTasks().filter((task) => task.status !== "done").length;
   const totalOverdue = allTasks().filter(isOverdue).length;
   return `
-    ${renderHead("전체 관리자", "모든 팀을 훑고 팀장과 팀별 진행 상황을 관리합니다.")}
+    ${renderHead("전체 관리자", "모든 팀을 훑고 팀장과 팀별 진행 상황을 관리합니다.", `<button class="btn primary" data-action="open-invite">팀 초대</button>`)}
     <div class="grid stats">
       <div class="stat-card"><span>전체 팀</span><strong>${teams.length}</strong></div>
       <div class="stat-card"><span>전체 인원</span><strong>${allMemberships().filter((item) => item.status !== "disabled").length}</strong></div>
@@ -2042,6 +2031,38 @@ function renderMemberRows() {
       </tr>
     `;
   }).join("");
+}
+
+function renderInviteModal() {
+  if (!state.inviteOpen || !isAdmin()) return "";
+  return `
+    <div class="modal-overlay" data-action="close-invite">
+      <section class="modal-card pop-card invite-modal-card" role="dialog" aria-modal="true" aria-labelledby="inviteModalTitle">
+        <button class="modal-close" type="button" data-action="close-invite" aria-label="닫기">×</button>
+        <h2 id="inviteModalTitle">팀 초대</h2>
+        <div class="invite-link-box">
+          <span>초대 코드</span>
+          <strong>${escapeHtml(inviteCode())}</strong>
+          <button class="btn" type="button" data-action="copy-invite">초대 주소 복사</button>
+        </div>
+        <form class="form" data-invite-form>
+          <input class="input" name="email" type="email" placeholder="초대할 이메일" required>
+          <select name="role">
+            ${assignableRoles().map((role) => option(role, ROLE_LABEL[role], "member")).join("")}
+          </select>
+          <button class="btn primary">이메일 초대</button>
+        </form>
+        <div class="invite-list">
+          ${state.invites.length ? state.invites.slice(0, 5).map((invite) => `
+            <div class="invite-item">
+              <strong>${escapeHtml(invite.email)}</strong>
+              <span>${escapeHtml(ROLE_LABEL[invite.role] || invite.role)} · ${escapeHtml(invite.code || invite.status || "초대중")}</span>
+            </div>
+          `).join("") : `<div class="empty small">아직 보낸 초대가 없습니다.</div>`}
+        </div>
+      </section>
+    </div>
+  `;
 }
 
 function renderNotices() {
@@ -2601,6 +2622,7 @@ function bindEvents() {
       state.view = "home";
       state.activeNoticeId = null;
       state.activeMessageId = null;
+      state.inviteOpen = false;
       state.workspaceMenuOpen = false;
       state.creatingWorkspaceFromMenu = false;
       await refreshData();
@@ -2616,10 +2638,11 @@ function bindEvents() {
     button.addEventListener("click", async () => {
       try {
       await api.setWorkspace(button.dataset.adminWorkspaceChoice);
-      state.adminWorkspaceId = button.dataset.adminWorkspaceChoice;
-      state.workspaceMenuOpen = false;
-      state.creatingWorkspaceFromMenu = false;
-      await refreshData();
+        state.adminWorkspaceId = button.dataset.adminWorkspaceChoice;
+        state.workspaceMenuOpen = false;
+        state.creatingWorkspaceFromMenu = false;
+        state.inviteOpen = false;
+        await refreshData();
         state.view = "dashboard";
         render();
       } catch (error) {
@@ -2633,6 +2656,14 @@ function bindEvents() {
       state.activeForm = button.dataset.formKind;
       state.editingTaskId = null;
       state.editingNoticeId = null;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='open-invite']").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!isAdmin()) return;
+      state.inviteOpen = true;
       render();
     });
   });
@@ -2724,6 +2755,14 @@ function bindEvents() {
       state.activeForm = null;
       state.editingTaskId = null;
       state.editingNoticeId = null;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='close-invite']").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      state.inviteOpen = false;
       render();
     });
   });
