@@ -1025,6 +1025,22 @@ textarea:focus {
   backdrop-filter: blur(16px);
 }
 
+.auth-card .form > .btn {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.auth-mode-switch {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.auth-mode-switch .btn {
+  min-height: 36px;
+  padding-inline: 14px;
+}
+
 .demo-account-panel {
   display: grid;
   gap: 10px;

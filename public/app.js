@@ -88,6 +88,7 @@ let state = {
   workspaceMenuOpen: false,
   adminWorkspaceId: null,
   noWorkspace: false,
+  authMode: "signin",
   messageScope: "team",
   taskScope: "mine",
   theme: localStorage.getItem(THEME_KEY) || "light",
@@ -177,7 +178,7 @@ function currentProfile() {
     id: state.user?.id,
     email: state.user?.email,
     full_name: state.user?.name || state.user?.email || "사용자",
-    avatar_url: ""
+    avatar_url: state.user?.avatar_url || ""
   };
 }
 
@@ -604,7 +605,7 @@ function makeDemoApi() {
     async session() {
       const data = readDemo();
       const user = data.users.find((item) => item.id === data.sessionUserId) || null;
-      return user ? { id: user.id, email: user.email, name: user.full_name } : null;
+      return user ? { id: user.id, email: user.email, name: user.full_name, avatar_url: user.avatar_url || "" } : null;
     },
     async signIn(email, password) {
       const data = readDemo();
@@ -612,16 +613,18 @@ function makeDemoApi() {
       if (!user) throw new Error("데모 계정을 찾을 수 없습니다.");
       data.sessionUserId = user.id;
       writeDemo(data);
-      return { id: user.id, email: user.email, name: user.full_name };
+      return { id: user.id, email: user.email, name: user.full_name, avatar_url: user.avatar_url || "" };
     },
-    async signUp(email, password, fullName) {
+    async signUp(email, password, profile = {}) {
       const data = readDemo();
       if (data.users.some((item) => item.email === email)) throw new Error("이미 존재하는 이메일입니다.");
-      const user = { id: uid(), email, password, full_name: fullName || email };
+      const fullName = profile.full_name?.trim() || email;
+      const avatarUrl = profile.avatar_url?.trim() || "";
+      const user = { id: uid(), email, password, full_name: fullName, avatar_url: avatarUrl };
       data.users.push(user);
       data.sessionUserId = user.id;
       writeDemo(data);
-      return { id: user.id, email: user.email, name: user.full_name };
+      return { id: user.id, email: user.email, name: user.full_name, avatar_url: user.avatar_url };
     },
     async signOut() {
       const data = readDemo();
@@ -893,7 +896,8 @@ function makeLiveApi() {
       return user ? {
         id: user.id,
         email: user.email,
-        name: user.user_metadata?.full_name || user.email
+        name: user.user_metadata?.full_name || user.email,
+        avatar_url: user.user_metadata?.avatar_url || ""
       } : null;
     },
     async signIn(email, password) {
@@ -902,21 +906,25 @@ function makeLiveApi() {
       return {
         id: data.user.id,
         email: data.user.email,
-        name: data.user.user_metadata?.full_name || data.user.email
+        name: data.user.user_metadata?.full_name || data.user.email,
+        avatar_url: data.user.user_metadata?.avatar_url || ""
       };
     },
-    async signUp(email, password, fullName) {
+    async signUp(email, password, profile = {}) {
+      const fullName = profile.full_name?.trim() || email;
+      const avatarUrl = profile.avatar_url?.trim() || "";
       const { data, error } = await supabaseClient.auth.signUp({
         email,
         password,
-        options: { data: { full_name: fullName || email } }
+        options: { data: { full_name: fullName, avatar_url: avatarUrl } }
       });
       if (error) throw error;
       if (!data.user) throw new Error("회원가입 응답이 비어 있습니다.");
       return {
         id: data.user.id,
         email: data.user.email,
-        name: fullName || data.user.email
+        name: fullName || data.user.email,
+        avatar_url: avatarUrl
       };
     },
     async signOut() {
@@ -929,7 +937,8 @@ function makeLiveApi() {
         .upsert({
           id: user.id,
           email: user.email,
-          full_name: user.name || user.email
+          full_name: user.name || user.email,
+          avatar_url: user.avatar_url || ""
         }, { onConflict: "id", ignoreDuplicates: true });
 
       let { data: memberships, error: memberError } = await supabaseClient
@@ -958,7 +967,7 @@ function makeLiveApi() {
           role: "guest",
           members: [],
           invites: [],
-          profiles: [{ id: user.id, email: user.email, full_name: user.name || user.email, avatar_url: "" }],
+          profiles: [{ id: user.id, email: user.email, full_name: user.name || user.email, avatar_url: user.avatar_url || "" }],
           projects: [],
           tasks: [],
           comments: [],
@@ -2531,6 +2540,7 @@ function renderProfile() {
 
 function renderAuth() {
   applyTheme();
+  const isSignup = state.authMode === "signup";
   app.innerHTML = `
     <main class="auth-page">
       <section class="auth-card">
@@ -2538,17 +2548,24 @@ function renderAuth() {
           <div class="brand-mark">W</div>
           <span><strong>Work To Do</strong></span>
         </div>
-        <h1>로그인</h1>
+        <h1>${isSignup ? "계정 생성" : "로그인"}</h1>
         <form class="form" data-auth-form>
-          <input class="input" name="full_name" placeholder="이름 또는 닉네임">
-          <input class="input" name="email" type="email" placeholder="이메일" value="${HAS_SUPABASE ? "" : "admin@worktodo.local"}" required>
-          <input class="input" name="password" type="password" placeholder="비밀번호" value="${HAS_SUPABASE ? "" : "admin123"}" required>
-          <div class="form-row">
-            <button class="btn primary" name="intent" value="signin">로그인</button>
-            <button class="btn" name="intent" value="signup">회원가입</button>
-          </div>
+          ${isSignup ? `
+            <input class="input" name="full_name" placeholder="이름 또는 닉네임" required>
+          ` : ""}
+          <input class="input" name="email" type="email" placeholder="이메일" value="${HAS_SUPABASE || isSignup ? "" : "admin@worktodo.local"}" required>
+          <input class="input" name="password" type="password" placeholder="비밀번호" value="${HAS_SUPABASE || isSignup ? "" : "admin123"}" required>
+          ${isSignup ? `
+            <input class="input" name="avatar_url" placeholder="프로필 이미지 URL">
+          ` : ""}
+          <button class="btn primary" name="intent" value="${isSignup ? "signup" : "signin"}">${isSignup ? "계정 생성" : "로그인"}</button>
         </form>
-        ${HAS_SUPABASE ? "" : renderDemoAccounts()}
+        <div class="auth-mode-switch">
+          <button class="btn ghost" type="button" data-auth-mode="${isSignup ? "signin" : "signup"}">
+            ${isSignup ? "로그인으로 돌아가기" : "계정 생성"}
+          </button>
+        </div>
+        ${HAS_SUPABASE || isSignup ? "" : renderDemoAccounts()}
       </section>
     </main>
   `;
@@ -2928,13 +2945,17 @@ function bindNoWorkspaceEvents() {
 }
 
 function bindAuthEvents() {
+  document.querySelector("[data-auth-mode]")?.addEventListener("click", (event) => {
+    state.authMode = event.currentTarget.dataset.authMode || "signin";
+    renderAuth();
+  });
+
   document.querySelectorAll("[data-demo-email]").forEach((button) => {
     button.addEventListener("click", () => {
       const form = document.querySelector("[data-auth-form]");
       if (!form) return;
       form.elements.email.value = button.dataset.demoEmail || "";
       form.elements.password.value = button.dataset.demoPassword || "";
-      form.elements.full_name.value = "";
     });
   });
 
@@ -2944,16 +2965,21 @@ function bindAuthEvents() {
     const form = new FormData(event.currentTarget);
     const email = form.get("email")?.toString().trim();
     const password = form.get("password")?.toString();
-    const fullName = form.get("full_name")?.toString().trim();
+    const intent = submitter?.value || state.authMode;
+    const profile = {
+      full_name: form.get("full_name")?.toString().trim(),
+      avatar_url: form.get("avatar_url")?.toString().trim()
+    };
     try {
-      state.user = submitter?.value === "signup"
-        ? await api.signUp(email, password, fullName)
+      state.user = intent === "signup"
+        ? await api.signUp(email, password, profile)
         : await api.signIn(email, password);
+      state.authMode = "signin";
       await refreshData();
       render();
-      toast("로그인되었습니다.");
+      toast(intent === "signup" ? "계정을 만들었습니다." : "로그인되었습니다.");
     } catch (error) {
-      toast(error.message || "로그인에 실패했습니다.");
+      toast(error.message || (intent === "signup" ? "계정 생성에 실패했습니다." : "로그인에 실패했습니다."));
     }
   });
 }
