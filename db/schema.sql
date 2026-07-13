@@ -30,6 +30,7 @@ create table if not exists public.workspace_members (
 );
 
 alter table public.profiles add column if not exists position text;
+alter table public.profiles add column if not exists avatar_url text;
 alter table public.workspaces add column if not exists invite_code text unique default upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
 alter table public.workspace_members drop constraint if exists workspace_members_status_check;
 alter table public.workspace_members add constraint workspace_members_status_check check (status in ('active', 'invited', 'leave', 'remote', 'disabled'));
@@ -264,6 +265,37 @@ on public.profiles for update
 to authenticated
 using (id = auth.uid())
 with check (id = auth.uid());
+
+drop policy if exists "profiles update by workspace admin" on public.profiles;
+create policy "profiles update by workspace admin"
+on public.profiles for update
+to authenticated
+using (
+  exists (
+    select 1
+    from public.workspace_members admin_member
+    join public.workspace_members target_member
+      on target_member.workspace_id = admin_member.workspace_id
+    where admin_member.user_id = auth.uid()
+      and admin_member.role = 'admin'
+      and admin_member.status in ('active', 'remote')
+      and target_member.user_id = profiles.id
+      and target_member.status <> 'disabled'
+  )
+)
+with check (
+  exists (
+    select 1
+    from public.workspace_members admin_member
+    join public.workspace_members target_member
+      on target_member.workspace_id = admin_member.workspace_id
+    where admin_member.user_id = auth.uid()
+      and admin_member.role = 'admin'
+      and admin_member.status in ('active', 'remote')
+      and target_member.user_id = profiles.id
+      and target_member.status <> 'disabled'
+  )
+);
 
 drop policy if exists "workspaces read members" on public.workspaces;
 create policy "workspaces read members"

@@ -157,13 +157,18 @@ function currentProfile() {
   return state.profiles.find((profile) => profile.id === state.user?.id) || {
     id: state.user?.id,
     email: state.user?.email,
-    full_name: state.user?.name || state.user?.email || "사용자"
+    full_name: state.user?.name || state.user?.email || "사용자",
+    avatar_url: ""
   };
 }
 
 function profileName(id) {
   const profile = state.profiles.find((item) => item.id === id);
   return profile?.full_name || profile?.email || "미지정";
+}
+
+function profileById(id) {
+  return state.profiles.find((item) => item.id === id);
 }
 
 function noticeExcerpt(body = "", length = 86) {
@@ -174,6 +179,36 @@ function noticeExcerpt(body = "", length = 86) {
 function initials(name = "") {
   const compact = String(name || "사용자").replace(/\s+/g, "");
   return compact.slice(0, 2).toUpperCase();
+}
+
+function avatarStyle(seed = "") {
+  const palette = [
+    ["#2563eb", "#0f766e"],
+    ["#7c3aed", "#db2777"],
+    ["#0891b2", "#4f46e5"],
+    ["#ea580c", "#be123c"],
+    ["#16a34a", "#0284c7"],
+    ["#9333ea", "#ca8a04"],
+    ["#0f766e", "#65a30d"],
+    ["#475569", "#2563eb"]
+  ];
+  const key = String(seed || "user").split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const [from, to] = palette[key % palette.length];
+  return `--avatar-from:${from}; --avatar-to:${to};`;
+}
+
+function renderAvatar(userId, size = "", fallbackLabel = "") {
+  const profile = profileById(userId);
+  const label = fallbackLabel || profile?.full_name || profile?.email || "사용자";
+  const classes = ["person-avatar", size].filter(Boolean).join(" ");
+  const image = profile?.avatar_url
+    ? `<img src="${escapeHtml(profile.avatar_url)}" alt="">`
+    : escapeHtml(initials(label));
+  return `<span class="${classes}" style="${avatarStyle(userId || label)}">${image}</span>`;
+}
+
+function renderTeamAvatar(size = "") {
+  return `<span class="person-avatar team ${size}" style="${avatarStyle(state.workspace?.id || "team")}">팀</span>`;
 }
 
 function messageThread(message) {
@@ -314,9 +349,9 @@ function readDemo() {
   return normalizeDemoData({
     sessionUserId: adminId,
     users: [
-      { id: adminId, email: "admin@worktodo.local", password: "admin123", full_name: "손팀장" },
-      { id: minjiId, email: "minji@worktodo.local", password: "member123", full_name: "강민지" },
-      { id: hyunId, email: "hyun@worktodo.local", password: "member123", full_name: "이현우" }
+      { id: adminId, email: "admin@worktodo.local", password: "admin123", full_name: "손팀장", position: "팀장", avatar_url: "" },
+      { id: minjiId, email: "minji@worktodo.local", password: "member123", full_name: "강민지", position: "운영 매니저", avatar_url: "" },
+      { id: hyunId, email: "hyun@worktodo.local", password: "member123", full_name: "이현우", position: "기획 리드", avatar_url: "" }
     ],
     activeWorkspaceId: workspaceId,
     workspaces: [
@@ -570,7 +605,7 @@ function makeDemoApi() {
         role: member?.role || "member",
         members: workspaceMembers,
         invites: (data.invites || []).filter((item) => item.workspace_id === workspace?.id),
-        profiles: data.users.map(({ id, email, full_name, position }) => ({ id, email, full_name, position })),
+        profiles: data.users.map(({ id, email, full_name, position, avatar_url }) => ({ id, email, full_name, position, avatar_url })),
         projects: data.projects.filter((item) => item.workspace_id === workspace?.id),
         tasks: data.tasks.filter((item) => item.workspace_id === workspace?.id),
         comments: data.comments,
@@ -638,10 +673,14 @@ function makeDemoApi() {
     },
     async updateMember(userId, patch) {
       const data = readDemo();
+      const { position, ...memberPatch } = patch;
       const workspace = activeDemoWorkspace(data);
       data.members = data.members.map((member) => member.workspace_id === workspace.id && member.user_id === userId
-        ? { ...member, ...patch }
+        ? { ...member, ...memberPatch }
         : member);
+      if (Object.prototype.hasOwnProperty.call(patch, "position")) {
+        data.users = data.users.map((user) => user.id === userId ? { ...user, position } : user);
+      }
       writeDemo(data);
     },
     async removeMember(userId) {
@@ -838,7 +877,7 @@ function makeLiveApi() {
           role: "guest",
           members: [],
           invites: [],
-          profiles: [{ id: user.id, email: user.email, full_name: user.name || user.email }],
+          profiles: [{ id: user.id, email: user.email, full_name: user.name || user.email, avatar_url: "" }],
           projects: [],
           tasks: [],
           comments: [],
@@ -967,12 +1006,22 @@ function makeLiveApi() {
       return data;
     },
     async updateMember(userId, patch) {
-      const { error } = await supabaseClient
-        .from("workspace_members")
-        .update(patch)
-        .eq("workspace_id", state.workspace.id)
-        .eq("user_id", userId);
-      if (error) throw error;
+      const { position, ...memberPatch } = patch;
+      if (Object.keys(memberPatch).length) {
+        const { error } = await supabaseClient
+          .from("workspace_members")
+          .update(memberPatch)
+          .eq("workspace_id", state.workspace.id)
+          .eq("user_id", userId);
+        if (error) throw error;
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, "position")) {
+        const { error } = await supabaseClient
+          .from("profiles")
+          .update({ position })
+          .eq("id", userId);
+        if (error) throw error;
+      }
     },
     async removeMember(userId) {
       const { error } = await supabaseClient
@@ -1229,7 +1278,6 @@ function render() {
           ${navButton("notices", "공지")}
           ${navButton("board", "보드")}
           ${navButton("dashboard", isAdmin() ? "관리자" : "팀원")}
-          ${navButton("profile", "내 정보")}
           <div class="side-panel">
             <h3>빠른 안내</h3>
             <p>${state.mode === "live"
@@ -1665,7 +1713,7 @@ function renderMemberRows() {
       <tr class="context-enabled" data-member-row="${profile.id}">
         <td>
           <span class="member-person">
-            <span class="person-avatar small">${escapeHtml(initials(profile.full_name || profile.email))}</span>
+            ${renderAvatar(profile.id, "small")}
             <strong>${escapeHtml(profile.full_name || profile.email)}</strong>
           </span>
         </td>
@@ -1819,7 +1867,7 @@ function renderProfileEditModal() {
         <h2 id="profileEditTitle">내 정보 수정</h2>
         <form class="form" data-profile-edit-form>
           <input class="input" name="full_name" placeholder="이름" value="${escapeHtml(profile.full_name || "")}" required>
-          <input class="input" name="position" placeholder="직책 또는 직무" value="${escapeHtml(profile.position || "")}">
+          <input class="input" name="avatar_url" placeholder="프로필 이미지 URL" value="${escapeHtml(profile.avatar_url || "")}">
           <button class="btn primary">수정 저장</button>
         </form>
       </section>
@@ -1855,6 +1903,7 @@ function renderMemberEditModal() {
         <button class="modal-close" type="button" data-action="close-member-edit" aria-label="닫기">×</button>
         <h2 id="memberEditTitle">${escapeHtml(profile.full_name || profile.email)}</h2>
         <form class="form" data-member-edit-form data-member-id="${profile.id}">
+          <input class="input" name="position" placeholder="직책 또는 직무" value="${escapeHtml(profile.position || "")}">
           <select name="role">
             ${Object.entries(ROLE_LABEL).filter(([role]) => ["admin", "manager", "member", "guest"].includes(role)).map(([value, label]) => option(value, label, member.role)).join("")}
           </select>
@@ -1930,10 +1979,9 @@ function renderMessageRow(message) {
   const name = messagePeerName(message);
   const badge = unreadMessageLabel(message);
   const latestText = latest?.body || message.body;
-  const avatarText = message.is_private ? initials(name) : "팀";
   return `
     <button class="message-row ${unread ? "unread" : ""} ${state.activeMessageId === message.id ? "active" : ""}" data-action="open-message" data-message-id="${message.id}">
-      <span class="person-avatar ${message.is_private ? "private" : "team"}">${escapeHtml(avatarText)}</span>
+      ${message.is_private ? renderAvatar(message.peer_id) : renderTeamAvatar()}
       <span class="message-row-main">
         <span class="message-row-name">${escapeHtml(name)}</span>
         <span class="message-row-preview">${escapeHtml(latestText)}</span>
@@ -1951,7 +1999,7 @@ function renderMessageDetail(message) {
   return `
     <article class="message-thread">
       <div class="message-thread-head">
-        <span class="person-avatar ${message.is_private ? "private" : "team"}">${escapeHtml(message.is_private ? initials(title) : "팀")}</span>
+        ${message.is_private ? renderAvatar(message.peer_id) : renderTeamAvatar()}
         <div>
           <h2>${escapeHtml(title)}</h2>
           <p>${message.is_private ? "개인 메시지" : escapeHtml(state.workspace?.name || "팀")}</p>
@@ -1972,7 +2020,7 @@ function renderChatBubble(item) {
   const mine = item.author_id === state.user?.id;
   return `
     <div class="chat-line ${mine ? "mine" : "theirs"}">
-      ${mine ? "" : `<span class="person-avatar small">${escapeHtml(initials(profileName(item.author_id)))}</span>`}
+      ${mine ? "" : renderAvatar(item.author_id, "small")}
       <div class="chat-bubble">
         <strong>${escapeHtml(profileName(item.author_id))}</strong>
         <span>${escapeHtml(item.body)}</span>
@@ -1984,7 +2032,7 @@ function renderChatBubble(item) {
 function renderMessageEmpty() {
   return `
     <div class="message-empty">
-      <div class="person-avatar large">人</div>
+      ${renderAvatar(state.user?.id, "large", "나")}
       <h2>대화를 선택하세요</h2>
       <p>왼쪽 목록에서 사람 또는 팀 메시지를 누르면 전체 대화가 열립니다.</p>
     </div>
@@ -2006,12 +2054,19 @@ function renderProfile() {
   return `
     ${renderHead("내 정보", "현재 로그인한 계정 정보와 권한을 확인하고 수정합니다.", `<button class="btn primary" data-action="open-profile-edit">수정</button>`)}
     <section class="card profile-card">
+      <div class="profile-summary">
+        ${renderAvatar(state.user.id, "large")}
+        <div>
+          <h2>${escapeHtml(profile.full_name || profile.email || "사용자")}</h2>
+          <p class="muted">${escapeHtml(profile.email || state.user.email || "-")}</p>
+        </div>
+      </div>
       <h2>프로필</h2>
       <table class="table">
         <tbody>
           <tr><th>이름</th><td>${escapeHtml(profile.full_name || "-")}</td></tr>
           <tr><th>이메일</th><td>${escapeHtml(profile.email || state.user.email || "-")}</td></tr>
-          <tr><th>직책</th><td>${escapeHtml(profile.position || "-")}</td></tr>
+          <tr><th>직책/직무</th><td>${escapeHtml(profile.position || "-")}</td></tr>
           <tr><th>역할</th><td>${escapeHtml(ROLE_LABEL[state.role] || state.role)}</td></tr>
           <tr><th>상태</th><td>${escapeHtml(MEMBER_STATUS_LABEL[member?.status] || member?.status || "-")}</td></tr>
           <tr><th>워크스페이스</th><td>${escapeHtml(state.workspace?.name || "-")}</td></tr>
@@ -2545,7 +2600,7 @@ async function handleProfileEditSubmit(event) {
   try {
     await api.updateProfile({
       full_name: form.get("full_name")?.toString().trim(),
-      position: form.get("position")?.toString().trim()
+      avatar_url: form.get("avatar_url")?.toString().trim()
     });
     state.profileEditOpen = false;
     await refreshData();
@@ -2562,6 +2617,7 @@ async function handleMemberEditSubmit(event) {
   const form = new FormData(event.currentTarget);
   try {
     await api.updateMember(event.currentTarget.dataset.memberId, {
+      position: form.get("position")?.toString().trim(),
       role: form.get("role")?.toString(),
       status: form.get("status")?.toString()
     });
