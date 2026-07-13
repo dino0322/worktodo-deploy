@@ -543,6 +543,14 @@ textarea:focus {
   text-decoration: none;
 }
 
+.btn.compact {
+  min-height: 32px;
+  padding: 6px 10px;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .btn.primary {
   background: var(--brand);
   border-color: var(--brand);
@@ -883,7 +891,9 @@ textarea:focus {
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-2) 76%, var(--task-scope-color, var(--brand)));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--task-scope-color, var(--brand)) 18%, transparent), transparent 120px),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-2) 72%, var(--task-scope-color, var(--brand))), var(--surface-2));
 }
 
 .column h3 {

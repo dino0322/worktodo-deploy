@@ -1762,7 +1762,7 @@ function renderTaskCard(task) {
           <select data-task-status="${task.id}" aria-label="업무 상태 변경">
             ${Object.entries(STATUS_LABEL).map(([value, label]) => option(value, label, task.status)).join("")}
           </select>
-          <button class="btn" data-action="edit-task" data-task-id="${task.id}">수정</button>
+          <button class="btn compact" data-action="edit-task" data-task-id="${task.id}">수정</button>
         ` : ""}
         <button class="btn" data-action="toggle-comments" data-task-id="${task.id}">댓글 ${comments.length}</button>
       </div>
@@ -1770,7 +1770,7 @@ function renderTaskCard(task) {
         ${comments.length ? comments.map(renderComment).join("") : `<div class="muted">아직 댓글이 없습니다.</div>`}
         <form class="form" data-comment-form="${task.id}">
           <input class="input" name="body" placeholder="댓글을 입력하세요" required>
-          <button class="btn">댓글 저장</button>
+          <button class="btn compact">댓글 저장</button>
         </form>
       </div>
     </article>
@@ -2138,12 +2138,12 @@ function renderTaskModal() {
         </div>
         <h2 id="taskModalTitle">${escapeHtml(task.title)}</h2>
         <p class="notice-full">${escapeHtml(task.description || "설명이 없습니다.")}</p>
-        ${editable ? `<div class="modal-actions"><button class="btn primary" data-action="edit-task" data-task-id="${task.id}">업무 수정</button></div>` : ""}
+        ${editable ? `<div class="modal-actions"><button class="btn primary compact" data-action="edit-task" data-task-id="${task.id}">업무 수정</button></div>` : ""}
         <div class="comment-list modal-comments">
           ${comments.length ? comments.map(renderComment).join("") : `<div class="muted">아직 댓글이 없습니다.</div>`}
           <form class="form" data-comment-form="${task.id}">
             <input class="input" name="body" placeholder="댓글을 입력하세요" required>
-            <button class="btn">댓글 저장</button>
+            <button class="btn compact">댓글 저장</button>
           </form>
         </div>
       </section>
