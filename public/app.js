@@ -9,7 +9,7 @@ const supabaseClient = HAS_SUPABASE
   ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
   : null;
 
-const STORE_KEY = "worktodoDemoV7";
+const STORE_KEY = "worktodoDemoV8";
 const THEME_KEY = "worktodoTheme";
 const STATUS_LABEL = {
   todo: "할 일",
@@ -378,7 +378,7 @@ function readDemo() {
   const projectOps = "project-ops";
   const projectLaunch = "project-launch";
   return normalizeDemoData({
-    sessionUserId: adminId,
+    sessionUserId: null,
     users: [
       { id: adminId, email: "admin@worktodo.local", password: "admin123", full_name: "전체관리자", position: "서비스 관리자", avatar_url: "" },
       { id: hyunId, email: "lead@worktodo.local", password: "lead123", full_name: "이현우", position: "기획 팀장", avatar_url: "" },
