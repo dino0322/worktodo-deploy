@@ -9,7 +9,7 @@ const supabaseClient = HAS_SUPABASE
   ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
   : null;
 
-const STORE_KEY = "worktodoDemoV1";
+const STORE_KEY = "worktodoDemoV2";
 const STATUS_LABEL = {
   todo: "할 일",
   in_progress: "진행 중",
@@ -50,6 +50,9 @@ let state = {
   questions: [],
   messages: [],
   activeNoticeId: null,
+  activeTaskId: null,
+  activeForm: null,
+  profileOpen: false,
   view: "home",
   filters: {
     search: "",
@@ -61,11 +64,36 @@ let state = {
 
 const app = document.querySelector("#app");
 const toastEl = document.querySelector("#toast");
+const DRAFT_PREFIX = "worktodoDraft:";
 
 function toast(message) {
   toastEl.textContent = message;
   toastEl.classList.add("show");
   window.setTimeout(() => toastEl.classList.remove("show"), 2400);
+}
+
+function draftKey(kind) {
+  return `${DRAFT_PREFIX}${state.user?.id || "guest"}:${state.workspace?.id || "workspace"}:${kind}`;
+}
+
+function loadDraft(kind) {
+  try {
+    return JSON.parse(localStorage.getItem(draftKey(kind)) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveDraft(kind, form) {
+  const data = Object.fromEntries(new FormData(form).entries());
+  form.querySelectorAll("input[type='checkbox']").forEach((input) => {
+    data[input.name] = input.checked ? "on" : "";
+  });
+  localStorage.setItem(draftKey(kind), JSON.stringify(data));
+}
+
+function clearDraft(kind) {
+  localStorage.removeItem(draftKey(kind));
 }
 
 function escapeHtml(value = "") {
@@ -814,9 +842,13 @@ function render() {
           <div class="brand-mark">W</div>
           <span><strong>Work To Do</strong><span>팀 업무와 개인 할 일을 한 곳에서</span></span>
         </div>
+        <nav class="top-nav" aria-label="빠른 메뉴">
+          ${topNavButton("messages", "메시지")}
+          ${topNavButton("questions", "질문")}
+        </nav>
         <div class="top-actions">
           ${workspaceSelect()}
-          <span class="role-chip">${roleBadge(state.role)}<span>${escapeHtml(profile.full_name || profile.email)}</span></span>
+          <button class="role-chip role-button" data-action="open-profile">${roleBadge(state.role, true)}<span>${escapeHtml(profile.full_name || profile.email)}</span></button>
           <span class="mode-chip ${state.mode === "live" ? "live" : ""}">${state.mode === "live" ? "DB 연결됨" : "데모 모드"}</span>
           <button class="btn ghost" data-action="logout">로그아웃</button>
         </div>
@@ -824,14 +856,11 @@ function render() {
       <div class="layout">
         <aside class="sidebar">
           ${navButton("home", "홈")}
-          ${navButton("messages", "메시지", false, true)}
-          ${navButton("questions", "질문", false, true)}
           ${navButton("mine", "내 업무")}
           ${navButton("team", "팀 업무")}
           ${navButton("notices", "공지")}
           ${navButton("board", "보드")}
           ${navButton("dashboard", "대시보드", !isManager())}
-          ${navButton("profile", "내 정보")}
           <div class="side-panel">
             <h3>빠른 안내</h3>
             <p>${state.mode === "live"
@@ -844,6 +873,9 @@ function render() {
         </main>
       </div>
       ${renderNoticeModal()}
+      ${renderTaskModal()}
+      ${renderFormModal()}
+      ${renderProfileModal()}
     </div>
   `;
   bindEvents();
@@ -851,6 +883,10 @@ function render() {
 
 function navButton(view, label, hidden = false, quick = false) {
   return `<button class="nav-button ${quick ? "quick" : ""} ${state.view === view ? "active" : ""}" data-view="${view}" ${hidden ? "hidden" : ""}>${label}</button>`;
+}
+
+function topNavButton(view, label) {
+  return `<button class="top-nav-button ${state.view === view ? "active" : ""}" data-view="${view}">${label}</button>`;
 }
 
 function renderPage() {
@@ -888,45 +924,74 @@ function renderStats() {
   `;
 }
 
-function renderHome() {
-  const myTasks = filteredTasks("mine").filter((task) => task.status !== "done").slice(0, 4);
-  const teamTasks = filteredTasks("team").filter((task) => task.status !== "done").slice(0, 4);
-  const notices = [...state.notices].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))).slice(0, 3);
+function renderCompactStats() {
+  const data = stats();
   return `
-    ${renderHead("오늘 볼 일", `${escapeHtml(state.workspace?.name || "팀")}의 업무와 공지를 한눈에 확인합니다.`, `<button class="btn primary" data-action="focus-task-form">새 업무</button>`)}
-    ${renderStats()}
-    <div class="home-grid">
-      <section class="home-section">
-        <div class="section-title">
-          <h2>내 업무</h2>
-          <button class="btn ghost" data-view="mine">전체보기</button>
-        </div>
-        <div class="list compact-list">
-          ${myTasks.length ? myTasks.map(renderMiniTaskCard).join("") : `<div class="empty">내 미완료 업무가 없습니다.</div>`}
-        </div>
-      </section>
-      <section class="home-section">
-        <div class="section-title">
-          <h2>팀 업무</h2>
-          <button class="btn ghost" data-view="team">전체보기</button>
-        </div>
-        <div class="list compact-list">
-          ${teamTasks.length ? teamTasks.map(renderMiniTaskCard).join("") : `<div class="empty">팀 미완료 업무가 없습니다.</div>`}
-        </div>
-      </section>
+    <div class="compact-stats">
+      <span>내 미완료 <strong>${data.mine}</strong></span>
+      <span>오늘 마감 <strong>${data.dueToday}</strong></span>
+      <span>지연 <strong>${data.overdue}</strong></span>
+      <span>검토 <strong>${data.review}</strong></span>
+    </div>
+  `;
+}
+
+function renderHome() {
+  const myTasks = filteredTasks("mine").filter((task) => task.status !== "done").slice(0, 3);
+  const teamTasks = filteredTasks("team").filter((task) => task.status !== "done").slice(0, 3);
+  const notices = [...state.notices].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))).slice(0, 6);
+  return `
+    ${renderHead("오늘 볼 일", `${escapeHtml(state.workspace?.name || "팀")}의 핵심 업무와 공지만 빠르게 확인합니다.`, `<button class="btn primary" data-action="open-form" data-form-kind="task">새 업무</button>`)}
+    ${renderCompactStats()}
+    <div class="home-dashboard">
+      <div class="home-left">
+        <section class="home-section task-blue">
+          <div class="section-title">
+            <h2>내 업무</h2>
+            <button class="btn ghost" data-view="mine">전체보기</button>
+          </div>
+          <div class="title-list">
+            ${myTasks.length ? myTasks.map(renderTitleTask).join("") : `<div class="empty small">내 미완료 업무가 없습니다.</div>`}
+          </div>
+        </section>
+        <section class="home-section task-orange">
+          <div class="section-title">
+            <h2>팀 업무</h2>
+            <button class="btn ghost" data-view="team">전체보기</button>
+          </div>
+          <div class="title-list">
+            ${teamTasks.length ? teamTasks.map(renderTitleTask).join("") : `<div class="empty small">팀 미완료 업무가 없습니다.</div>`}
+          </div>
+        </section>
+      </div>
       <section class="home-section notices-home">
         <div class="section-title">
           <h2>공지</h2>
           <button class="btn ghost" data-view="notices">전체보기</button>
         </div>
-        <div class="list compact-list">
-          ${notices.length ? notices.map((notice) => renderNoticeCard(notice, true)).join("") : `<div class="empty">표시할 공지가 없습니다.</div>`}
+        <div class="title-list notice-title-list">
+          ${notices.length ? notices.map(renderTitleNotice).join("") : `<div class="empty small">표시할 공지가 없습니다.</div>`}
         </div>
       </section>
     </div>
-    <div class="home-form-row">
-      ${renderTaskForm()}
-    </div>
+  `;
+}
+
+function renderTitleTask(task) {
+  return `
+    <button class="title-row" data-action="open-task" data-task-id="${task.id}">
+      <span>${escapeHtml(task.title)}</span>
+      <small>${STATUS_LABEL[task.status] || task.status}</small>
+    </button>
+  `;
+}
+
+function renderTitleNotice(notice) {
+  return `
+    <button class="title-row notice-row" data-action="open-notice" data-notice-id="${notice.id}">
+      <span>${escapeHtml(notice.title)}</span>
+      ${notice.pinned ? `<small>고정</small>` : `<small>${escapeHtml(profileName(notice.author_id))}</small>`}
+    </button>
   `;
 }
 
@@ -974,15 +1039,12 @@ function renderTaskList(scope) {
     : "나에게 배정되었거나 내가 만든 업무를 먼저 처리합니다.";
   const tasks = filteredTasks(scope);
   return `
-    ${renderHead(title, body, `<button class="btn primary" data-action="focus-task-form">새 업무</button>`)}
+    ${renderHead(title, body, `<button class="btn primary" data-action="open-form" data-form-kind="task">새 업무</button>`)}
     ${renderStats()}
     ${renderFilters()}
-    <div class="content-grid">
-      <section class="list">
-        ${tasks.length ? tasks.map(renderTaskCard).join("") : `<div class="empty">조건에 맞는 업무가 없습니다.</div>`}
-      </section>
-      ${renderTaskForm()}
-    </div>
+    <section class="list">
+      ${tasks.length ? tasks.map(renderTaskCard).join("") : `<div class="empty">조건에 맞는 업무가 없습니다.</div>`}
+    </section>
   `;
 }
 
@@ -1031,33 +1093,31 @@ function renderComment(comment) {
 }
 
 function renderTaskForm() {
+  const draft = loadDraft("task");
   return `
-    <aside class="card" id="taskFormCard">
-      <h2>새 업무 만들기</h2>
-      <form class="form" data-task-form>
-        <input class="input" name="title" placeholder="업무 제목" required>
-        <textarea name="description" placeholder="업무 설명"></textarea>
+      <form class="form" data-task-form data-draft="task">
+        <input class="input" name="title" placeholder="업무 제목" value="${escapeHtml(draft.title || "")}" required>
+        <textarea name="description" placeholder="업무 설명">${escapeHtml(draft.description || "")}</textarea>
         <div class="form-row">
           <select name="assignee_id">
-            ${state.profiles.map((profile) => option(profile.id, profile.full_name || profile.email, state.user.id)).join("")}
+            ${state.profiles.map((profile) => option(profile.id, profile.full_name || profile.email, draft.assignee_id || state.user.id)).join("")}
           </select>
           <select name="priority">
-            ${Object.entries(PRIORITY_LABEL).map(([value, label]) => option(value, label, "normal")).join("")}
+            ${Object.entries(PRIORITY_LABEL).map(([value, label]) => option(value, label, draft.priority || "normal")).join("")}
           </select>
         </div>
         <div class="form-row">
           <select name="status">
-            ${Object.entries(STATUS_LABEL).map(([value, label]) => option(value, label, "todo")).join("")}
+            ${Object.entries(STATUS_LABEL).map(([value, label]) => option(value, label, draft.status || "todo")).join("")}
           </select>
-          <input class="input" name="due_date" type="date">
+          <input class="input" name="due_date" type="date" value="${escapeHtml(draft.due_date || "")}">
         </div>
         <select name="project_id">
           <option value="">프로젝트 없음</option>
-          ${state.projects.map((project) => option(project.id, project.name, "")).join("")}
+          ${state.projects.map((project) => option(project.id, project.name, draft.project_id || "")).join("")}
         </select>
         <button class="btn primary">업무 저장</button>
       </form>
-    </aside>
   `;
 }
 
@@ -1146,21 +1206,12 @@ function renderDashboard() {
 function renderNotices() {
   const canWrite = isManager();
   return `
-    ${renderHead("공지", "팀 전체에 공유할 운영 메시지와 배포 안내를 남깁니다.")}
-    <div class="content-grid">
-      <section class="list">
-        ${state.notices.length ? state.notices.map((notice) => renderNoticeCard(notice, false)).join("") : `<div class="empty">아직 공지가 없습니다.</div>`}
-      </section>
-      <aside class="card ${canWrite ? "" : "hidden"}">
-        <h2>공지 작성</h2>
-        <form class="form" data-notice-form>
-          <input class="input" name="title" placeholder="공지 제목" required>
-          <textarea class="notice-editor" name="body" placeholder="공지 내용 전체를 작성하세요. 목록과 홈에서는 일부만 보이고, 전문 보기에서 전체가 열립니다." required></textarea>
-          <label><input type="checkbox" name="pinned"> 상단 고정</label>
-          <button class="btn primary">공지 저장</button>
-        </form>
-      </aside>
-    </div>
+    ${renderHead("공지", "팀 전체에 공유할 운영 메시지와 배포 안내를 남깁니다.", canWrite ? `<button class="btn primary" data-action="open-form" data-form-kind="notice">공지 작성</button>` : "")}
+    <section class="card">
+      <div class="title-list notice-title-list">
+        ${state.notices.length ? state.notices.map(renderTitleNotice).join("") : `<div class="empty small">아직 공지가 없습니다.</div>`}
+      </div>
+    </section>
   `;
 }
 
@@ -1196,22 +1247,113 @@ function renderNoticeModal() {
   `;
 }
 
+function renderTaskModal() {
+  const task = state.tasks.find((item) => item.id === state.activeTaskId);
+  if (!task) return "";
+  const comments = state.comments.filter((comment) => comment.task_id === task.id);
+  return `
+    <div class="modal-overlay" data-action="close-task">
+      <section class="modal-card pop-card" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
+        <button class="modal-close" type="button" data-action="close-task" aria-label="닫기">×</button>
+        <div class="task-meta">
+          <span class="pill">${STATUS_LABEL[task.status] || task.status}</span>
+          <span class="pill ${task.priority}">${PRIORITY_LABEL[task.priority] || task.priority}</span>
+          <span class="pill">담당 ${escapeHtml(profileName(task.assignee_id))}</span>
+          ${task.due_date ? `<span class="pill ${isOverdue(task) ? "overdue" : ""}">마감 ${escapeHtml(task.due_date)}</span>` : ""}
+        </div>
+        <h2 id="taskModalTitle">${escapeHtml(task.title)}</h2>
+        <p class="notice-full">${escapeHtml(task.description || "설명이 없습니다.")}</p>
+        <div class="comment-list modal-comments">
+          ${comments.length ? comments.map(renderComment).join("") : `<div class="muted">아직 댓글이 없습니다.</div>`}
+          <form class="form" data-comment-form="${task.id}">
+            <input class="input" name="body" placeholder="댓글을 입력하세요" required>
+            <button class="btn">댓글 저장</button>
+          </form>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderFormModal() {
+  if (!state.activeForm) return "";
+  const title = {
+    task: "새 업무 만들기",
+    notice: "공지 작성",
+    question: "질문 작성",
+    message: "메시지 작성"
+  }[state.activeForm];
+  return `
+    <div class="modal-overlay" data-action="close-form">
+      <section class="modal-card pop-card" role="dialog" aria-modal="true" aria-labelledby="formModalTitle">
+        <button class="modal-close" type="button" data-action="close-form" aria-label="닫기">×</button>
+        <h2 id="formModalTitle">${title}</h2>
+        ${renderActiveForm()}
+      </section>
+    </div>
+  `;
+}
+
+function renderActiveForm() {
+  if (state.activeForm === "task") return renderTaskForm();
+  if (state.activeForm === "notice") return renderNoticeForm();
+  if (state.activeForm === "question") return renderQuestionForm();
+  if (state.activeForm === "message") return renderMessageForm();
+  return "";
+}
+
+function renderNoticeForm() {
+  const draft = loadDraft("notice");
+  return `
+    <form class="form" data-notice-form data-draft="notice">
+      <input class="input" name="title" placeholder="공지 제목" value="${escapeHtml(draft.title || "")}" required>
+      <textarea class="notice-editor" name="body" placeholder="공지 내용 전체를 작성하세요." required>${escapeHtml(draft.body || "")}</textarea>
+      <label><input type="checkbox" name="pinned" ${draft.pinned === "on" ? "checked" : ""}> 상단 고정</label>
+      <button class="btn primary">공지 저장</button>
+    </form>
+  `;
+}
+
+function renderQuestionForm() {
+  const draft = loadDraft("question");
+  return `
+    <form class="form" data-question-form data-draft="question">
+      <input class="input" name="title" placeholder="질문 제목" value="${escapeHtml(draft.title || "")}" required>
+      <textarea name="body" placeholder="질문 내용을 적어주세요" required>${escapeHtml(draft.body || "")}</textarea>
+      <button class="btn primary">질문 등록</button>
+    </form>
+  `;
+}
+
+function renderMessageForm() {
+  const draft = loadDraft("message");
+  return `
+    <form class="form" data-message-form data-draft="message">
+      <textarea name="body" placeholder="메시지 내용을 입력하세요" required>${escapeHtml(draft.body || "")}</textarea>
+      <label><input type="checkbox" name="is_private" ${draft.is_private === "on" ? "checked" : ""}> 비공개로 보내기</label>
+      <button class="btn primary">메시지 저장</button>
+    </form>
+  `;
+}
+
+function renderProfileModal() {
+  if (!state.profileOpen) return "";
+  return `
+    <div class="modal-overlay" data-action="close-profile">
+      <section class="modal-card pop-card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+        <button class="modal-close" type="button" data-action="close-profile" aria-label="닫기">×</button>
+        ${renderProfile().replace("내 정보", "내 정보")}
+      </section>
+    </div>
+  `;
+}
+
 function renderQuestions() {
   return `
-    ${renderHead("질문", "업무 진행 중 생긴 질문을 남기고, 매니저가 답변합니다.")}
-    <div class="content-grid">
-      <section class="list">
-        ${state.questions.length ? state.questions.map(renderQuestionCard).join("") : `<div class="empty">아직 질문이 없습니다.</div>`}
-      </section>
-      <aside class="card">
-        <h2>질문 작성</h2>
-        <form class="form" data-question-form>
-          <input class="input" name="title" placeholder="질문 제목" required>
-          <textarea name="body" placeholder="질문 내용을 적어주세요" required></textarea>
-          <button class="btn primary">질문 등록</button>
-        </form>
-      </aside>
-    </div>
+    ${renderHead("질문", "업무 진행 중 생긴 질문을 남기고, 매니저가 답변합니다.", `<button class="btn primary" data-action="open-form" data-form-kind="question">질문 작성</button>`)}
+    <section class="list">
+      ${state.questions.length ? state.questions.map(renderQuestionCard).join("") : `<div class="empty">아직 질문이 없습니다.</div>`}
+    </section>
   `;
 }
 
@@ -1243,20 +1385,10 @@ function renderQuestionCard(question) {
 function renderMessages() {
   const messages = visibleMessages();
   return `
-    ${renderHead("메시지", "개인 상담이나 운영자에게만 보낼 내용을 남깁니다. 비공개 메시지는 작성자와 매니저만 볼 수 있습니다.")}
-    <div class="content-grid">
-      <section class="list">
-        ${messages.length ? messages.map(renderMessageCard).join("") : `<div class="empty">표시할 메시지가 없습니다.</div>`}
-      </section>
-      <aside class="card">
-        <h2>메시지 작성</h2>
-        <form class="form" data-message-form>
-          <textarea name="body" placeholder="메시지 내용을 입력하세요" required></textarea>
-          <label><input type="checkbox" name="is_private"> 비공개로 보내기</label>
-          <button class="btn primary">메시지 저장</button>
-        </form>
-      </aside>
-    </div>
+    ${renderHead("메시지", "개인 상담이나 운영자에게만 보낼 내용을 남깁니다.", `<button class="btn primary" data-action="open-form" data-form-kind="message">메시지 작성</button>`)}
+    <section class="list">
+      ${messages.length ? messages.map(renderMessageCard).join("") : `<div class="empty">표시할 메시지가 없습니다.</div>`}
+    </section>
   `;
 }
 
@@ -1335,15 +1467,6 @@ function renderAuth() {
         </form>
         <p class="muted">${HAS_SUPABASE ? "회원가입 후 이메일 확인 설정에 따라 바로 로그인되지 않을 수 있습니다." : "데모 계정: admin@worktodo.local / admin123"}</p>
       </section>
-      <section class="auth-visual">
-        <h2>오늘 팀이 볼 화면</h2>
-        <p>내 업무, 팀 보드, 관리자 대시보드, 공지까지 첫 화면에서 바로 접근합니다.</p>
-        <div class="fake-board">
-          <div class="fake-card"><strong>내 업무</strong><p>오늘 마감과 지연 업무를 우선 표시</p></div>
-          <div class="fake-card"><strong>팀 보드</strong><p>할 일, 진행 중, 검토, 완료 상태 관리</p></div>
-          <div class="fake-card"><strong>DB 저장</strong><p>Supabase Auth와 Postgres RLS 기반</p></div>
-        </div>
-      </section>
     </main>
   `;
   bindAuthEvents();
@@ -1363,6 +1486,11 @@ function bindEvents() {
     renderAuth();
   });
 
+  document.querySelector("[data-action='open-profile']")?.addEventListener("click", () => {
+    state.profileOpen = true;
+    render();
+  });
+
   document.querySelector("[data-workspace-switch]")?.addEventListener("change", async (event) => {
     try {
       await api.setWorkspace(event.target.value);
@@ -1376,8 +1504,11 @@ function bindEvents() {
     }
   });
 
-  document.querySelector("[data-action='focus-task-form']")?.addEventListener("click", () => {
-    document.querySelector("#taskFormCard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.querySelectorAll("[data-action='open-form']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeForm = button.dataset.formKind;
+      render();
+    });
   });
 
   document.querySelectorAll("[data-action='open-notice']").forEach((button) => {
@@ -1387,10 +1518,41 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-action='open-task']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.activeTaskId = button.dataset.taskId;
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-action='close-notice']").forEach((item) => {
     item.addEventListener("click", (event) => {
       if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
       state.activeNoticeId = null;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='close-task']").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      state.activeTaskId = null;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='close-form']").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      state.activeForm = null;
+      render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='close-profile']").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      state.profileOpen = false;
       render();
     });
   });
@@ -1406,6 +1568,11 @@ function bindEvents() {
   document.querySelector("[data-notice-form]")?.addEventListener("submit", handleNoticeSubmit);
   document.querySelector("[data-question-form]")?.addEventListener("submit", handleQuestionSubmit);
   document.querySelector("[data-message-form]")?.addEventListener("submit", handleMessageSubmit);
+
+  document.querySelectorAll("[data-draft]").forEach((form) => {
+    form.addEventListener("input", () => saveDraft(form.dataset.draft, form));
+    form.addEventListener("change", () => saveDraft(form.dataset.draft, form));
+  });
 
   document.querySelectorAll("[data-task-status]").forEach((select) => {
     select.addEventListener("change", async () => {
@@ -1475,6 +1642,8 @@ async function handleTaskSubmit(event) {
   };
   try {
     await api.createTask(task);
+    clearDraft("task");
+    state.activeForm = null;
     await refreshData();
     render();
     toast("업무를 만들었습니다.");
@@ -1508,6 +1677,8 @@ async function handleNoticeSubmit(event) {
       pinned: form.get("pinned") === "on",
       importance: form.get("pinned") === "on" ? "important" : "normal"
     });
+    clearDraft("notice");
+    state.activeForm = null;
     await refreshData();
     render();
     toast("공지를 저장했습니다.");
@@ -1524,6 +1695,8 @@ async function handleQuestionSubmit(event) {
       title: form.get("title")?.toString().trim(),
       body: form.get("body")?.toString().trim()
     });
+    clearDraft("question");
+    state.activeForm = null;
     await refreshData();
     render();
     toast("질문을 등록했습니다.");
@@ -1553,6 +1726,8 @@ async function handleMessageSubmit(event) {
       body: form.get("body")?.toString().trim(),
       is_private: form.get("is_private") === "on"
     });
+    clearDraft("message");
+    state.activeForm = null;
     await refreshData();
     render();
     toast("메시지를 저장했습니다.");

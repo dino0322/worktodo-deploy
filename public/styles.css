@@ -95,6 +95,29 @@ button {
   flex-wrap: wrap;
 }
 
+.top-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.top-nav-button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.top-nav-button.active {
+  color: var(--brand);
+  background: #e8f0ff;
+  border-color: rgba(37, 99, 235, 0.16);
+}
+
 .workspace-chip,
 .mode-chip,
 .role-chip {
@@ -108,6 +131,10 @@ button {
   background: var(--surface);
   color: var(--muted);
   font-size: 13px;
+}
+
+.role-button {
+  cursor: pointer;
 }
 
 .workspace-select {
@@ -371,25 +398,39 @@ textarea:focus {
   align-items: start;
 }
 
-.home-grid {
+.home-dashboard {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(280px, 0.78fr) minmax(360px, 1.22fr);
   gap: 18px;
   align-items: start;
 }
 
+.home-left {
+  display: grid;
+  gap: 14px;
+}
+
 .home-section {
-  min-height: 360px;
-  padding: 18px;
+  min-height: 0;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
 }
 
+.home-section.task-blue {
+  background: #f3f7ff;
+  border-color: #c9d9ff;
+}
+
+.home-section.task-orange {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
 .home-section.notices-home {
-  grid-column: 1 / -1;
-  min-height: 220px;
+  min-height: 430px;
 }
 
 .section-title {
@@ -402,7 +443,7 @@ textarea:focus {
 
 .section-title h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 17px;
 }
 
 .compact-list {
@@ -416,6 +457,75 @@ textarea:focus {
 .home-form-row {
   max-width: 720px;
   margin-top: 18px;
+}
+
+.compact-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.compact-stats span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compact-stats strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.title-list {
+  display: grid;
+  gap: 8px;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid rgba(216, 224, 234, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--text);
+  text-align: left;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.title-row:hover {
+  transform: translateY(-2px);
+  border-color: rgba(37, 99, 235, 0.35);
+  box-shadow: 0 12px 28px rgba(22, 32, 46, 0.12);
+}
+
+.title-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title-row small {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notice-title-list {
+  gap: 10px;
 }
 
 .list {
@@ -566,14 +676,13 @@ textarea:focus {
 
 .auth-page {
   display: grid;
-  grid-template-columns: minmax(320px, 480px) minmax(0, 1fr);
-  gap: 28px;
+  place-items: center;
   min-height: 100vh;
   padding: 40px;
 }
 
 .auth-card {
-  align-self: center;
+  width: min(460px, 100%);
   padding: 26px;
 }
 
@@ -680,6 +789,7 @@ textarea:focus {
   place-items: center;
   padding: 20px;
   background: rgba(15, 23, 42, 0.42);
+  animation: modalFade 0.18s ease both;
 }
 
 .modal-card {
@@ -692,6 +802,7 @@ textarea:focus {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
+  animation: modalPop 0.22s cubic-bezier(.2, .9, .2, 1.08) both;
 }
 
 .modal-card h2 {
@@ -710,6 +821,26 @@ textarea:focus {
   color: var(--text);
   font-size: 22px;
   line-height: 1;
+}
+
+.modal-comments {
+  max-height: none;
+}
+
+@keyframes modalFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalPop {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .toast {
@@ -761,7 +892,7 @@ textarea:focus {
     grid-template-columns: 1fr;
   }
 
-  .home-grid {
+  .home-dashboard {
     grid-template-columns: 1fr;
   }
 
@@ -784,7 +915,7 @@ textarea:focus {
   .toolbar,
   .form-row,
   .grid.stats,
-  .home-grid,
+  .home-dashboard,
   .auth-page {
     grid-template-columns: 1fr;
   }
