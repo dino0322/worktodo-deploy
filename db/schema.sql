@@ -23,7 +23,7 @@ create table if not exists public.workspace_members (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
-  role text not null default 'member' check (role in ('member', 'manager', 'admin', 'guest')),
+  role text not null default 'member' check (role in ('super_admin', 'admin', 'manager', 'member', 'guest')),
   status text not null default 'active' check (status in ('active', 'invited', 'leave', 'remote', 'disabled')),
   created_at timestamptz not null default now(),
   unique (workspace_id, user_id)
@@ -32,6 +32,8 @@ create table if not exists public.workspace_members (
 alter table public.profiles add column if not exists position text;
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.workspaces add column if not exists invite_code text unique default upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
+alter table public.workspace_members drop constraint if exists workspace_members_role_check;
+alter table public.workspace_members add constraint workspace_members_role_check check (role in ('super_admin', 'admin', 'manager', 'member', 'guest'));
 alter table public.workspace_members drop constraint if exists workspace_members_status_check;
 alter table public.workspace_members add constraint workspace_members_status_check check (status in ('active', 'invited', 'leave', 'remote', 'disabled'));
 
@@ -115,13 +117,16 @@ create table if not exists public.team_invites (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   email text not null,
-  role text not null default 'member' check (role in ('member', 'manager', 'admin', 'guest')),
+  role text not null default 'member' check (role in ('super_admin', 'admin', 'manager', 'member', 'guest')),
   code text not null,
   status text not null default 'invited' check (status in ('invited', 'accepted', 'revoked')),
   invited_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.team_invites drop constraint if exists team_invites_role_check;
+alter table public.team_invites add constraint team_invites_role_check check (role in ('super_admin', 'admin', 'manager', 'member', 'guest'));
 
 create index if not exists workspace_members_user_idx on public.workspace_members(user_id);
 create index if not exists tasks_workspace_idx on public.tasks(workspace_id);
@@ -143,13 +148,28 @@ alter table public.questions enable row level security;
 alter table public.messages enable row level security;
 alter table public.team_invites enable row level security;
 
-create or replace function public.is_workspace_member(target_workspace_id uuid)
+create or replace function public.is_super_admin()
 returns boolean
 language sql
 security definer
 set search_path = public
 as $$
   select exists (
+    select 1
+    from public.workspace_members
+    where user_id = auth.uid()
+      and role = 'super_admin'
+      and status in ('active', 'remote')
+  );
+$$;
+
+create or replace function public.is_workspace_member(target_workspace_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select public.is_super_admin() or exists (
     select 1
     from public.workspace_members
     where workspace_id = target_workspace_id
@@ -164,12 +184,12 @@ language sql
 security definer
 set search_path = public
 as $$
-  select exists (
+  select public.is_super_admin() or exists (
     select 1
     from public.workspace_members
     where workspace_id = target_workspace_id
       and user_id = auth.uid()
-      and role in ('admin', 'manager')
+      and role in ('admin', 'manager', 'super_admin')
       and status in ('active', 'remote')
   );
 $$;
@@ -180,12 +200,12 @@ language sql
 security definer
 set search_path = public
 as $$
-  select exists (
+  select public.is_super_admin() or exists (
     select 1
     from public.workspace_members
     where workspace_id = target_workspace_id
       and user_id = auth.uid()
-      and role = 'admin'
+      and role in ('admin', 'super_admin')
       and status in ('active', 'remote')
   );
 $$;
@@ -277,7 +297,7 @@ using (
     join public.workspace_members target_member
       on target_member.workspace_id = admin_member.workspace_id
     where admin_member.user_id = auth.uid()
-      and admin_member.role = 'admin'
+      and admin_member.role in ('admin', 'super_admin')
       and admin_member.status in ('active', 'remote')
       and target_member.user_id = profiles.id
       and target_member.status <> 'disabled'
@@ -290,7 +310,7 @@ with check (
     join public.workspace_members target_member
       on target_member.workspace_id = admin_member.workspace_id
     where admin_member.user_id = auth.uid()
-      and admin_member.role = 'admin'
+      and admin_member.role in ('admin', 'super_admin')
       and admin_member.status in ('active', 'remote')
       and target_member.user_id = profiles.id
       and target_member.status <> 'disabled'

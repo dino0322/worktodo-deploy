@@ -9,7 +9,7 @@ const supabaseClient = HAS_SUPABASE
   ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
   : null;
 
-const STORE_KEY = "worktodoDemoV5";
+const STORE_KEY = "worktodoDemoV6";
 const THEME_KEY = "worktodoTheme";
 const STATUS_LABEL = {
   todo: "할 일",
@@ -24,9 +24,10 @@ const PRIORITY_LABEL = {
   urgent: "긴급"
 };
 const ROLE_LABEL = {
+  super_admin: "전체 관리자",
+  admin: "팀장",
   member: "팀원",
   manager: "매니저",
-  admin: "관리자",
   viewer: "읽기",
   guest: "게스트"
 };
@@ -38,7 +39,8 @@ const MEMBER_STATUS_LABEL = {
   disabled: "비활성"
 };
 const ROLE_META = {
-  admin: { icon: "◆", className: "admin", label: "관리자" },
+  super_admin: { icon: "◆", className: "super-admin", label: "전체 관리자" },
+  admin: { icon: "◆", className: "admin", label: "팀장" },
   manager: { icon: "●", className: "manager", label: "매니저" },
   member: { icon: "■", className: "member", label: "팀원" },
   viewer: { icon: "▲", className: "viewer", label: "읽기" },
@@ -50,6 +52,9 @@ let state = {
   user: null,
   workspace: null,
   workspaces: [],
+  allWorkspaces: [],
+  allMemberships: [],
+  allTasks: [],
   role: "member",
   profiles: [],
   members: [],
@@ -70,6 +75,7 @@ let state = {
   profileOpen: false,
   profileEditOpen: false,
   workspaceMenuOpen: false,
+  adminWorkspaceId: null,
   noWorkspace: false,
   messageScope: "team",
   taskScope: "mine",
@@ -349,9 +355,9 @@ function readDemo() {
   return normalizeDemoData({
     sessionUserId: adminId,
     users: [
-      { id: adminId, email: "admin@worktodo.local", password: "admin123", full_name: "손팀장", position: "팀장", avatar_url: "" },
+      { id: adminId, email: "admin@worktodo.local", password: "admin123", full_name: "전체관리자", position: "서비스 관리자", avatar_url: "" },
       { id: minjiId, email: "minji@worktodo.local", password: "member123", full_name: "강민지", position: "운영 매니저", avatar_url: "" },
-      { id: hyunId, email: "hyun@worktodo.local", password: "member123", full_name: "이현우", position: "기획 리드", avatar_url: "" }
+      { id: hyunId, email: "hyun@worktodo.local", password: "member123", full_name: "이현우", position: "기획 팀장", avatar_url: "" }
     ],
     activeWorkspaceId: workspaceId,
     workspaces: [
@@ -361,15 +367,15 @@ function readDemo() {
     ],
     workspace: { id: workspaceId, name: "Work To Do 제품팀", invite_code: "WTD-2026" },
     members: [
-      { workspace_id: workspaceId, user_id: adminId, role: "admin", status: "active" },
+      { workspace_id: workspaceId, user_id: adminId, role: "super_admin", status: "active" },
       { workspace_id: workspaceId, user_id: minjiId, role: "member", status: "remote" },
-      { workspace_id: workspaceId, user_id: hyunId, role: "manager", status: "leave" },
-      { workspace_id: opsWorkspaceId, user_id: adminId, role: "manager", status: "active" },
-      { workspace_id: opsWorkspaceId, user_id: minjiId, role: "member", status: "active" },
+      { workspace_id: workspaceId, user_id: hyunId, role: "admin", status: "leave" },
+      { workspace_id: opsWorkspaceId, user_id: adminId, role: "super_admin", status: "active" },
+      { workspace_id: opsWorkspaceId, user_id: minjiId, role: "admin", status: "active" },
       { workspace_id: opsWorkspaceId, user_id: hyunId, role: "member", status: "active" },
-      { workspace_id: researchWorkspaceId, user_id: adminId, role: "admin", status: "active" },
+      { workspace_id: researchWorkspaceId, user_id: adminId, role: "super_admin", status: "active" },
       { workspace_id: researchWorkspaceId, user_id: minjiId, role: "manager", status: "active" },
-      { workspace_id: researchWorkspaceId, user_id: hyunId, role: "member", status: "active" }
+      { workspace_id: researchWorkspaceId, user_id: hyunId, role: "admin", status: "active" }
     ],
     projects: [
       { id: projectOps, workspace_id: workspaceId, name: "운영", color: "#2563eb" },
@@ -602,6 +608,9 @@ function makeDemoApi() {
         noWorkspace: !workspace || !member,
         workspace,
         workspaces: data.workspaces,
+        allWorkspaces: data.workspaces,
+        allMemberships: data.members.filter((item) => item.status !== "disabled"),
+        allTasks: data.tasks,
         role: member?.role || "member",
         members: workspaceMembers,
         invites: (data.invites || []).filter((item) => item.workspace_id === workspace?.id),
@@ -877,12 +886,19 @@ function makeLiveApi() {
       let workspace;
       let workspaces = [];
       let role = memberships?.[0]?.role || "admin";
+      let allWorkspaces = [];
+      let allMemberships = [];
+      let allTasks = [];
+      const isGlobalAdmin = memberships?.some((item) => item.role === "super_admin");
 
       if (!memberships?.length) {
         return {
           noWorkspace: true,
           workspace: null,
           workspaces: [],
+          allWorkspaces: [],
+          allMemberships: [],
+          allTasks: [],
           role: "guest",
           members: [],
           invites: [],
@@ -896,14 +912,16 @@ function makeLiveApi() {
         };
       } else {
         const workspaceIds = memberships.map((item) => item.workspace_id);
-        const { data: workspaceData, error: workspaceFetchError } = await supabaseClient
+        const workspaceQuery = supabaseClient
           .from("workspaces")
-          .select("*")
-          .in("id", workspaceIds);
+          .select("*");
+        const { data: workspaceData, error: workspaceFetchError } = isGlobalAdmin
+          ? await workspaceQuery
+          : await workspaceQuery.in("id", workspaceIds);
         if (workspaceFetchError) throw workspaceFetchError;
         workspaces = workspaceData || [];
         workspace = workspaces.find((item) => item.id === state.workspace?.id) || workspaces[0];
-        role = memberships.find((item) => item.workspace_id === workspace?.id)?.role || "member";
+        role = isGlobalAdmin ? "super_admin" : memberships.find((item) => item.workspace_id === workspace?.id)?.role || "member";
       }
 
       const [
@@ -931,15 +949,37 @@ function makeLiveApi() {
       }
 
       const memberIds = membersResult.data.map((item) => item.user_id);
+      if (isGlobalAdmin) {
+        const [allMembersResult, allTasksResult] = await Promise.all([
+          supabaseClient.from("workspace_members").select("*").neq("status", "disabled"),
+          supabaseClient.from("tasks").select("*").is("archived_at", null).order("created_at", { ascending: false })
+        ]);
+        for (const result of [allMembersResult, allTasksResult]) {
+          if (result.error) throw result.error;
+        }
+        allWorkspaces = workspaces;
+        allMemberships = allMembersResult.data || [];
+        allTasks = allTasksResult.data || [];
+      }
+      const profileIds = Array.from(new Set([
+        ...memberIds,
+        ...(allMemberships || []).map((item) => item.user_id),
+        user.id
+      ]));
       const { data: profiles, error: profilesError } = await supabaseClient
         .from("profiles")
         .select("*")
-        .in("id", memberIds.length ? memberIds : [user.id]);
+        .in("id", profileIds.length ? profileIds : [user.id]);
       if (profilesError) throw profilesError;
 
       return {
         workspace,
         workspaces,
+        allWorkspaces: allWorkspaces.length ? allWorkspaces : workspaces,
+        allMemberships: allMemberships.length
+          ? allMemberships
+          : Array.from(new Map([...(memberships || []), ...(membersResult.data || [])].map((item) => [`${item.workspace_id}:${item.user_id}`, item])).values()),
+        allTasks: allTasks.length ? allTasks : tasksResult.data || [],
         role,
         noWorkspace: false,
         members: membersResult.data || [],
@@ -1209,15 +1249,56 @@ function stats() {
 }
 
 function isManager() {
-  return ["admin", "manager"].includes(state.role);
+  return ["super_admin", "admin", "manager"].includes(state.role);
+}
+
+function isSuperAdmin() {
+  return state.role === "super_admin";
 }
 
 function isAdmin() {
-  return state.role === "admin";
+  return ["super_admin", "admin"].includes(state.role);
+}
+
+function canManageMember(userId) {
+  if (!userId || userId === state.user?.id) return false;
+  const targetRole = memberRecord(userId)?.role;
+  if (isSuperAdmin()) return targetRole !== "super_admin";
+  if (state.role === "admin") return ["manager", "member", "guest"].includes(targetRole);
+  return false;
+}
+
+function assignableRoles() {
+  return isSuperAdmin() ? ["admin", "manager", "member", "guest"] : ["manager", "member", "guest"];
 }
 
 function memberRecord(userId) {
   return state.members.find((member) => member.user_id === userId);
+}
+
+function allWorkspaces() {
+  return state.allWorkspaces?.length ? state.allWorkspaces : state.workspaces;
+}
+
+function allMemberships() {
+  return state.allMemberships?.length ? state.allMemberships : state.members;
+}
+
+function allTasks() {
+  return state.allTasks?.length ? state.allTasks : state.tasks;
+}
+
+function workspaceName(workspaceId) {
+  const workspace = allWorkspaces().find((item) => item.id === workspaceId);
+  return workspace?.name || "알 수 없는 팀";
+}
+
+function userMemberships(userId = state.user?.id) {
+  return allMemberships().filter((item) => item.user_id === userId && item.status !== "disabled");
+}
+
+function memberRole(userId) {
+  return allMemberships().find((item) => item.workspace_id === state.workspace?.id && item.user_id === userId)?.role || memberRecord(userId)?.role || "guest";
 }
 
 function inviteCode() {
@@ -1301,7 +1382,7 @@ function render() {
           ${navButton("tasks", "업무")}
           ${navButton("notices", "공지")}
           ${navButton("board", "보드")}
-          ${navButton("dashboard", isAdmin() ? "관리자" : "팀원")}
+          ${navButton("dashboard", isSuperAdmin() ? "전체 관리자" : isAdmin() ? "관리자" : "팀원")}
           <div class="side-panel">
             <h3>빠른 안내</h3>
             <p>${state.mode === "live"
@@ -1632,6 +1713,7 @@ function renderBoard() {
 }
 
 function renderDashboard() {
+  if (isSuperAdmin()) return renderGlobalAdminDashboard();
   const tasks = filteredTasks("dashboard");
   const data = stats();
   const rows = state.profiles.filter((profile) => memberRecord(profile.id)).map((profile) => {
@@ -1677,7 +1759,7 @@ function renderDashboard() {
         <form class="form" data-invite-form>
           <input class="input" name="email" type="email" placeholder="초대할 이메일" required ${isAdmin() ? "" : "disabled"}>
           <select name="role" ${isAdmin() ? "" : "disabled"}>
-            ${Object.entries(ROLE_LABEL).filter(([role]) => ["member", "manager", "guest"].includes(role)).map(([value, label]) => option(value, label, "member")).join("")}
+            ${assignableRoles().map((role) => option(role, ROLE_LABEL[role], "member")).join("")}
           </select>
           <button class="btn primary" ${isAdmin() ? "" : "disabled"}>이메일 초대</button>
         </form>
@@ -1725,6 +1807,91 @@ function renderDashboard() {
         </table>
       </aside>
     </div>
+  `;
+}
+
+function renderGlobalAdminDashboard() {
+  const teams = allWorkspaces();
+  const selectedId = state.workspace?.id || teams[0]?.id;
+  const selectedTeam = teams.find((team) => team.id === selectedId) || teams[0];
+  const selectedMembers = allMemberships().filter((member) => member.workspace_id === selectedTeam?.id && member.status !== "disabled");
+  const selectedTasks = allTasks().filter((task) => task.workspace_id === selectedTeam?.id && task.status !== "done");
+  const totalOpenTasks = allTasks().filter((task) => task.status !== "done").length;
+  const totalOverdue = allTasks().filter(isOverdue).length;
+  return `
+    ${renderHead("전체 관리자", "모든 팀을 훑고 팀장과 팀별 진행 상황을 관리합니다.")}
+    <div class="grid stats">
+      <div class="stat-card"><span>전체 팀</span><strong>${teams.length}</strong></div>
+      <div class="stat-card"><span>전체 인원</span><strong>${allMemberships().filter((item) => item.status !== "disabled").length}</strong></div>
+      <div class="stat-card"><span>진행 업무</span><strong>${totalOpenTasks}</strong></div>
+      <div class="stat-card"><span>지연 업무</span><strong>${totalOverdue}</strong></div>
+    </div>
+
+    <section class="card global-admin-card">
+      <div class="section-title">
+        <h2>팀 목록</h2>
+        <span class="muted">팀을 누르면 해당 팀의 인원과 업무를 확인합니다.</span>
+      </div>
+      <div class="team-admin-list">
+        ${teams.map((team) => {
+          const teamMembers = allMemberships().filter((member) => member.workspace_id === team.id && member.status !== "disabled");
+          const teamTasks = allTasks().filter((task) => task.workspace_id === team.id && task.status !== "done");
+          const leads = teamMembers.filter((member) => member.role === "admin").map((member) => profileName(member.user_id));
+          return `
+            <button type="button" class="team-admin-item ${team.id === selectedTeam?.id ? "active" : ""}" data-admin-workspace-choice="${team.id}">
+              <span>
+                <strong>${escapeHtml(team.name)}</strong>
+                <small>${escapeHtml(leads.join(", ") || "팀장 미지정")}</small>
+              </span>
+              <span class="team-admin-counts">
+                <b>${teamMembers.length}</b>명
+                <b>${teamTasks.length}</b>건
+              </span>
+            </button>
+          `;
+        }).join("")}
+      </div>
+    </section>
+
+    <div class="admin-grid">
+      <section class="card admin-card">
+        <div class="section-title">
+          <h2>${escapeHtml(selectedTeam?.name || "팀")} 인원</h2>
+          <span class="muted">팀장까지 관리할 수 있습니다.</span>
+        </div>
+        <table class="table member-table">
+          <thead><tr><th>인원</th><th>직급</th><th>상태</th><th>이메일</th></tr></thead>
+          <tbody>
+            ${renderMemberRows()}
+          </tbody>
+        </table>
+      </section>
+      <aside class="card invite-card">
+        <h2>팀 요약</h2>
+        <div class="invite-list">
+          <div class="invite-item"><strong>${selectedMembers.length}명</strong><span>참여 인원</span></div>
+          <div class="invite-item"><strong>${selectedTasks.length}건</strong><span>진행 중 업무</span></div>
+          <div class="invite-item"><strong>${selectedTasks.filter(isOverdue).length}건</strong><span>지연 업무</span></div>
+        </div>
+      </aside>
+    </div>
+
+    <section class="card">
+      <h2>${escapeHtml(selectedTeam?.name || "팀")} 업무</h2>
+      <table class="table">
+        <thead><tr><th>업무</th><th>담당자</th><th>상태</th><th>마감</th></tr></thead>
+        <tbody>
+          ${selectedTasks.slice(0, 16).map((task) => `
+            <tr>
+              <td>${escapeHtml(task.title)}</td>
+              <td>${escapeHtml(profileName(task.assignee_id))}</td>
+              <td>${STATUS_LABEL[task.status] || task.status}</td>
+              <td>${escapeHtml(task.due_date || "-")}</td>
+            </tr>
+          `).join("") || `<tr><td colspan="4">진행 중인 업무가 없습니다.</td></tr>`}
+        </tbody>
+      </table>
+    </section>
   `;
 }
 
@@ -1933,14 +2100,15 @@ function renderProfileEditModal() {
 function renderMemberActionMenu() {
   if (!state.memberMenu) return "";
   const profile = state.profiles.find((item) => item.id === state.memberMenu.userId);
+  const canManage = canManageMember(state.memberMenu.userId);
   return `
     <div class="context-backdrop" data-action="close-member-menu">
       <div class="member-context-menu" style="left:${state.memberMenu.x}px; top:${state.memberMenu.y}px" role="menu">
         <strong>${escapeHtml(profile?.full_name || profile?.email || "팀원")}</strong>
         <button type="button" data-action="message-member" ${state.memberMenu.userId === state.user.id ? "disabled" : ""}>메시지 보내기</button>
-        ${isAdmin() ? `
+        ${canManage ? `
           <button type="button" data-action="edit-member">직급/상태 수정</button>
-          <button type="button" class="danger-text" data-action="remove-member" ${state.memberMenu.userId === state.user.id ? "disabled" : ""}>팀 추방</button>
+          <button type="button" class="danger-text" data-action="remove-member">팀 추방</button>
         ` : ""}
       </div>
     </div>
@@ -1948,10 +2116,11 @@ function renderMemberActionMenu() {
 }
 
 function renderMemberEditModal() {
-  if (!state.activeMemberId || !isAdmin()) return "";
+  if (!state.activeMemberId || !canManageMember(state.activeMemberId)) return "";
   const profile = state.profiles.find((item) => item.id === state.activeMemberId);
   const member = memberRecord(state.activeMemberId);
   if (!profile || !member) return "";
+  const editableRoles = assignableRoles();
   return `
     <div class="modal-overlay" data-action="close-member-edit">
       <section class="modal-card pop-card" role="dialog" aria-modal="true" aria-labelledby="memberEditTitle">
@@ -1960,7 +2129,7 @@ function renderMemberEditModal() {
         <form class="form" data-member-edit-form data-member-id="${profile.id}">
           <input class="input" name="position" placeholder="직책 또는 직무" value="${escapeHtml(profile.position || "")}">
           <select name="role">
-            ${Object.entries(ROLE_LABEL).filter(([role]) => ["admin", "manager", "member", "guest"].includes(role)).map(([value, label]) => option(value, label, member.role)).join("")}
+            ${editableRoles.map((role) => option(role, ROLE_LABEL[role], member.role)).join("")}
           </select>
           <select name="status">
             ${Object.entries(MEMBER_STATUS_LABEL).map(([value, label]) => option(value, label, member.status)).join("")}
@@ -2061,7 +2230,7 @@ function renderMessageDetail(message) {
         </div>
       </div>
       <div class="chat-stream">
-        ${conversationThread(message).map(renderChatBubble).join("") || `<div class="empty small">아직 메시지가 없습니다.</div>`}
+        ${conversationThread(message).map((item) => renderChatBubble(item, message.is_private)).join("") || `<div class="empty small">아직 메시지가 없습니다.</div>`}
       </div>
       <form class="chat-reply" data-conversation-reply-form="${message.id}" data-recipient-id="${escapeHtml(message.peer_id || "")}" data-message-scope="${message.is_private ? "private" : "team"}">
         <input class="input" name="body" placeholder="답장을 입력하세요" required>
@@ -2071,13 +2240,17 @@ function renderMessageDetail(message) {
   `;
 }
 
-function renderChatBubble(item) {
+function renderChatBubble(item, isPrivate = false) {
   const mine = item.author_id === state.user?.id;
+  const role = memberRole(item.author_id);
   return `
     <div class="chat-line ${mine ? "mine" : "theirs"}">
       ${mine ? "" : renderAvatar(item.author_id, "small")}
       <div class="chat-bubble">
-        <strong>${escapeHtml(profileName(item.author_id))}</strong>
+        <strong class="chat-author">
+          <span>${escapeHtml(profileName(item.author_id))}</span>
+          ${isPrivate ? "" : roleBadge(role)}
+        </strong>
         <span>${escapeHtml(item.body)}</span>
       </div>
     </div>
@@ -2109,6 +2282,7 @@ function renderProfile() {
   const email = profile.email || state.user.email || "-";
   const roleLabel = ROLE_LABEL[state.role] || state.role;
   const statusLabel = MEMBER_STATUS_LABEL[member?.status] || member?.status || "-";
+  const memberships = userMemberships();
   return `
     ${renderHead("내 정보", "계정 정보와 현재 팀 권한을 확인합니다.")}
     <section class="profile-page">
@@ -2160,6 +2334,27 @@ function renderProfile() {
             <span class="settings-label">팀</span>
             <span class="settings-value">${escapeHtml(state.workspace?.name || "-")}</span>
           </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>소속 팀</h2>
+        <div class="settings-list team-membership-list">
+          ${memberships.length ? memberships.map((membership) => `
+            <div class="settings-row team-membership-row">
+              <span class="settings-label">${escapeHtml(workspaceName(membership.workspace_id))}</span>
+              <span class="settings-value membership-value">
+                ${roleBadge(membership.role)}
+                <span>${escapeHtml(ROLE_LABEL[membership.role] || membership.role)}</span>
+                <span class="status-pill ${escapeHtml(membership.status)}">${escapeHtml(MEMBER_STATUS_LABEL[membership.status] || membership.status)}</span>
+              </span>
+            </div>
+          `).join("") : `
+            <div class="settings-row">
+              <span class="settings-label">소속</span>
+              <span class="settings-value">참여 중인 팀이 없습니다.</span>
+            </div>
+          `}
         </div>
       </section>
 
@@ -2248,6 +2443,21 @@ function bindEvents() {
     } catch (error) {
       toast(error.message || "팀 전환에 실패했습니다.");
     }
+    });
+  });
+
+  document.querySelectorAll("[data-admin-workspace-choice]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await api.setWorkspace(button.dataset.adminWorkspaceChoice);
+        state.adminWorkspaceId = button.dataset.adminWorkspaceChoice;
+        state.workspaceMenuOpen = false;
+        await refreshData();
+        state.view = "dashboard";
+        render();
+      } catch (error) {
+        toast(error.message || "팀 정보를 불러오지 못했습니다.");
+      }
     });
   });
 
@@ -2363,8 +2573,8 @@ function bindEvents() {
   });
 
   document.querySelector("[data-action='edit-member']")?.addEventListener("click", () => {
-    if (!isAdmin()) return;
     state.activeMemberId = state.memberMenu?.userId || null;
+    if (!canManageMember(state.activeMemberId)) return;
     state.memberMenu = null;
     render();
   });
@@ -2379,9 +2589,8 @@ function bindEvents() {
   });
 
   document.querySelector("[data-action='remove-member']")?.addEventListener("click", async () => {
-    if (!isAdmin()) return;
     const userId = state.memberMenu?.userId;
-    if (!userId || userId === state.user.id) return;
+    if (!canManageMember(userId)) return;
     try {
       await api.removeMember(userId);
       state.memberMenu = null;
@@ -2718,7 +2927,7 @@ async function handleProfileEditSubmit(event) {
 
 async function handleMemberEditSubmit(event) {
   event.preventDefault();
-  if (!isAdmin()) return;
+  if (!canManageMember(event.currentTarget.dataset.memberId)) return;
   const form = new FormData(event.currentTarget);
   try {
     await api.updateMember(event.currentTarget.dataset.memberId, {

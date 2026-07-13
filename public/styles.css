@@ -294,18 +294,19 @@ body[data-theme="dark"] .btn.primary {
   line-height: 1;
 }
 
-.role-dot.admin {
+.role-dot.super-admin {
   background: #dc2626;
 }
 
-.role-dot.manager {
+.role-dot.admin {
   background: #b45309;
 }
 
-.role-dot.member {
+.role-dot.manager {
   background: #2563eb;
 }
 
+.role-dot.member,
 .role-dot.viewer {
   background: #15803d;
 }
@@ -326,6 +327,11 @@ body[data-theme="dark"] .btn.primary {
 }
 
 .sidebar {
+  position: sticky;
+  top: 72px;
+  align-self: start;
+  max-height: calc(100vh - 72px);
+  overflow: auto;
   padding: 22px 16px;
   border-right: 1px solid var(--line);
   background: var(--surface);
@@ -1247,6 +1253,12 @@ textarea:focus {
   font-size: 12px;
 }
 
+.chat-author {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+}
+
 .chat-bubble span {
   white-space: pre-wrap;
 }
@@ -1381,6 +1393,17 @@ textarea:focus {
   gap: 8px;
 }
 
+.membership-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.team-membership-row .settings-label {
+  color: var(--text);
+}
+
 .settings-row.editable {
   cursor: text;
 }
@@ -1427,6 +1450,60 @@ textarea:focus {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
+}
+
+.global-admin-card {
+  margin-bottom: 18px;
+}
+
+.team-admin-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.team-admin-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 74px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  text-align: left;
+}
+
+.team-admin-item.active {
+  border-color: color-mix(in srgb, var(--brand) 44%, var(--line));
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+}
+
+.team-admin-item strong,
+.team-admin-item small {
+  display: block;
+}
+
+.team-admin-item small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.team-admin-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.team-admin-counts b {
+  color: var(--text);
 }
 
 .member-table tr.context-enabled {
@@ -1634,7 +1711,8 @@ textarea:focus {
 
   .home-dashboard,
   .admin-grid,
-  .message-shell {
+  .message-shell,
+  .team-admin-list {
     grid-template-columns: 1fr;
   }
 
