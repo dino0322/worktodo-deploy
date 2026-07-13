@@ -9,7 +9,7 @@ const supabaseClient = HAS_SUPABASE
   ? window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseAnonKey)
   : null;
 
-const STORE_KEY = "worktodoDemoV6";
+const STORE_KEY = "worktodoDemoV7";
 const THEME_KEY = "worktodoTheme";
 const STATUS_LABEL = {
   todo: "할 일",
@@ -46,6 +46,13 @@ const ROLE_META = {
   viewer: { icon: "▲", className: "viewer", label: "읽기" },
   guest: { icon: "○", className: "guest", label: "게스트" }
 };
+const DEMO_ACCOUNT_HINTS = [
+  { role: "super_admin", email: "admin@worktodo.local", password: "admin123", name: "전체관리자" },
+  { role: "admin", email: "lead@worktodo.local", password: "lead123", name: "팀장 계정" },
+  { role: "manager", email: "manager@worktodo.local", password: "manager123", name: "매니저 계정" },
+  { role: "member", email: "member@worktodo.local", password: "member123", name: "팀원 계정" },
+  { role: "guest", email: "guest@worktodo.local", password: "guest123", name: "게스트 계정" }
+];
 
 let state = {
   mode: HAS_SUPABASE ? "live" : "demo",
@@ -72,6 +79,7 @@ let state = {
   activeMessageTargetId: null,
   editingTaskId: null,
   editingNoticeId: null,
+  creatingWorkspaceFromMenu: false,
   memberMenu: null,
   activeForm: null,
   profileOpen: false,
@@ -217,6 +225,16 @@ function renderAvatar(userId, size = "", fallbackLabel = "") {
   return `<span class="${classes}" style="${avatarStyle(userId || label)}">${image}</span>`;
 }
 
+function renderAvatarWithRole(userId, size = "", fallbackLabel = "") {
+  const role = memberRole(userId);
+  return `
+    <span class="avatar-with-role">
+      ${renderAvatar(userId, size, fallbackLabel)}
+      <span class="avatar-role-badge">${roleBadge(role, false, true)}</span>
+    </span>
+  `;
+}
+
 function renderTeamAvatar(size = "") {
   return `<span class="person-avatar team ${size}" style="${avatarStyle(state.workspace?.id || "team")}">팀</span>`;
 }
@@ -351,6 +369,8 @@ function readDemo() {
   const adminId = "demo-admin";
   const minjiId = "demo-minji";
   const hyunId = "demo-hyun";
+  const managerId = "demo-manager";
+  const guestId = "demo-guest";
   const workspaceId = "demo-workspace";
   const opsWorkspaceId = "demo-ops-workspace";
   const researchWorkspaceId = "demo-research-workspace";
@@ -360,8 +380,10 @@ function readDemo() {
     sessionUserId: adminId,
     users: [
       { id: adminId, email: "admin@worktodo.local", password: "admin123", full_name: "전체관리자", position: "서비스 관리자", avatar_url: "" },
-      { id: minjiId, email: "minji@worktodo.local", password: "member123", full_name: "강민지", position: "운영 매니저", avatar_url: "" },
-      { id: hyunId, email: "hyun@worktodo.local", password: "member123", full_name: "이현우", position: "기획 팀장", avatar_url: "" }
+      { id: hyunId, email: "lead@worktodo.local", password: "lead123", full_name: "이현우", position: "기획 팀장", avatar_url: "" },
+      { id: managerId, email: "manager@worktodo.local", password: "manager123", full_name: "서지윤", position: "프로젝트 매니저", avatar_url: "" },
+      { id: minjiId, email: "member@worktodo.local", password: "member123", full_name: "강민지", position: "운영 담당", avatar_url: "" },
+      { id: guestId, email: "guest@worktodo.local", password: "guest123", full_name: "박준호", position: "외부 게스트", avatar_url: "" }
     ],
     activeWorkspaceId: workspaceId,
     workspaces: [
@@ -374,9 +396,12 @@ function readDemo() {
       { workspace_id: workspaceId, user_id: adminId, role: "super_admin", status: "active" },
       { workspace_id: workspaceId, user_id: minjiId, role: "member", status: "remote" },
       { workspace_id: workspaceId, user_id: hyunId, role: "admin", status: "leave" },
+      { workspace_id: workspaceId, user_id: managerId, role: "manager", status: "active" },
+      { workspace_id: workspaceId, user_id: guestId, role: "guest", status: "active" },
       { workspace_id: opsWorkspaceId, user_id: adminId, role: "super_admin", status: "active" },
-      { workspace_id: opsWorkspaceId, user_id: minjiId, role: "admin", status: "active" },
+      { workspace_id: opsWorkspaceId, user_id: minjiId, role: "member", status: "active" },
       { workspace_id: opsWorkspaceId, user_id: hyunId, role: "member", status: "active" },
+      { workspace_id: opsWorkspaceId, user_id: managerId, role: "admin", status: "active" },
       { workspace_id: researchWorkspaceId, user_id: adminId, role: "super_admin", status: "active" },
       { workspace_id: researchWorkspaceId, user_id: minjiId, role: "manager", status: "active" },
       { workspace_id: researchWorkspaceId, user_id: hyunId, role: "admin", status: "active" }
@@ -644,7 +669,25 @@ function makeDemoApi() {
       data.workspaces = [workspace, ...(data.workspaces || [])];
       data.workspace = workspace;
       data.activeWorkspaceId = workspace.id;
-      data.members.push({ workspace_id: workspace.id, user_id: data.sessionUserId, role: "admin", status: "active" });
+      const isDemoSuperAdmin = data.members.some((member) => member.user_id === data.sessionUserId && member.role === "super_admin" && member.status !== "disabled");
+      data.members.push({ workspace_id: workspace.id, user_id: data.sessionUserId, role: isDemoSuperAdmin ? "super_admin" : "admin", status: "active" });
+      data.projects = [
+        { id: uid(), workspace_id: workspace.id, name: "일반", color: "#2563eb" },
+        ...(data.projects || [])
+      ];
+      data.messages = [
+        {
+          id: uid(),
+          workspace_id: workspace.id,
+          sender_id: data.sessionUserId,
+          body: `${workspace.name} 팀 메시지가 시작되었습니다.`,
+          is_private: false,
+          replies: [],
+          read_by: [data.sessionUserId],
+          created_at: new Date().toISOString()
+        },
+        ...(data.messages || [])
+      ];
       writeDemo(data);
       return workspace;
     },
@@ -1035,8 +1078,22 @@ function makeLiveApi() {
       if (workspaceError) throw workspaceError;
       const { error: memberError } = await supabaseClient
         .from("workspace_members")
-        .insert({ workspace_id: workspace.id, user_id: state.user.id, role: "admin", status: "active" });
+        .insert({ workspace_id: workspace.id, user_id: state.user.id, role: isSuperAdmin() ? "super_admin" : "admin", status: "active" });
       if (memberError) throw memberError;
+      const { error: projectError } = await supabaseClient
+        .from("projects")
+        .insert({ workspace_id: workspace.id, name: "일반", color: "#2563eb" });
+      if (projectError) throw projectError;
+      const { error: messageError } = await supabaseClient
+        .from("messages")
+        .insert({
+          workspace_id: workspace.id,
+          sender_id: state.user.id,
+          body: `${name} 팀 메시지가 시작되었습니다.`,
+          is_private: false,
+          read_by: [state.user.id]
+        });
+      if (messageError) throw messageError;
       return workspace;
     },
     async joinWorkspaceByCode(code) {
@@ -1371,13 +1428,14 @@ function visibleMessages() {
   );
 }
 
-function roleBadge(role = state.role, showText = false) {
+function roleBadge(role = state.role, showText = false, compact = false) {
   const meta = ROLE_META[role] || ROLE_META.guest;
-  return `<span class="role-dot ${meta.className}" title="${meta.label}" aria-label="${meta.label}">${meta.icon}${showText ? `<span>${meta.label}</span>` : ""}</span>`;
+  return `<span class="role-dot ${meta.className} ${compact ? "compact" : ""}" title="${meta.label}" aria-label="${meta.label}">${meta.icon}${showText ? `<span>${meta.label}</span>` : ""}</span>`;
 }
 
 function workspaceSelect() {
   if (!state.workspaces?.length) return `<span class="workspace-chip">${escapeHtml(state.workspace?.name || "워크스페이스")}</span>`;
+  const canCreateWorkspace = isSuperAdmin();
   return `
     <div class="workspace-picker ${state.workspaceMenuOpen ? "open" : ""}">
       <button type="button" class="workspace-trigger" data-action="toggle-workspace-menu" aria-expanded="${state.workspaceMenuOpen}">
@@ -1393,6 +1451,20 @@ function workspaceSelect() {
               ${workspace.id === state.workspace?.id ? `<strong>현재</strong>` : ""}
             </button>
           `).join("")}
+          ${canCreateWorkspace ? `
+            <div class="workspace-menu-divider"></div>
+            ${state.creatingWorkspaceFromMenu ? `
+              <form class="workspace-create-form" data-create-workspace-form>
+                <input class="input" name="name" placeholder="새 팀 이름" required>
+                <button class="btn primary">팀 추가</button>
+              </form>
+            ` : `
+              <button type="button" class="workspace-add" data-action="show-workspace-create">
+                <span>새 팀 추가</span>
+                <strong>+</strong>
+              </button>
+            `}
+          ` : ""}
         </div>
       ` : ""}
     </div>
@@ -1434,7 +1506,6 @@ function render() {
           ${navButton("home", "홈")}
           ${navButton("tasks", "업무")}
           ${navButton("notices", "공지")}
-          ${navButton("board", "보드")}
           ${navButton("dashboard", isSuperAdmin() ? "전체 관리자" : isAdmin() ? "관리자" : "팀원")}
           <div class="side-panel">
             <h3>빠른 안내</h3>
@@ -1499,7 +1570,6 @@ function topNavButton(view, label) {
 function renderPage() {
   if (state.view === "home") return renderHome();
   if (state.view === "tasks") return renderTaskList();
-  if (state.view === "board") return renderBoard();
   if (state.view === "dashboard") return renderDashboard();
   if (state.view === "notices") return renderNotices();
   if (state.view === "questions") return renderQuestions();
@@ -1656,15 +1726,18 @@ function renderTaskList(scope = state.taskScope) {
     : "나에게 배정되었거나 내가 만든 업무를 먼저 처리합니다.";
   const tasks = filteredTasks(scope);
   return `
-    ${renderHead("업무", `${title}를 기준으로 업무를 정리합니다. ${body}`, `<button class="btn primary" data-action="open-form" data-form-kind="task">새 업무</button>`)}
-    <section class="task-workspace ${scope === "team" ? "team-scope" : "mine-scope"}">
-      ${renderTaskScopeTabs(scope)}
-      ${renderStats()}
-      ${renderFilters()}
-    </section>
-    <section class="list task-list">
-      ${tasks.length ? tasks.map(renderTaskCard).join("") : `<div class="empty">조건에 맞는 업무가 없습니다.</div>`}
-    </section>
+    <div class="task-page ${scope === "team" ? "task-page-team" : "task-page-mine"}">
+      ${renderHead("업무", `${title}를 기준으로 업무를 정리합니다. ${body}`, `<button class="btn primary" data-action="open-form" data-form-kind="task">새 업무</button>`)}
+      <section class="task-workspace ${scope === "team" ? "team-scope" : "mine-scope"}">
+        ${renderTaskScopeTabs(scope)}
+        ${renderStats()}
+        ${renderFilters()}
+      </section>
+      ${renderTaskBoard(tasks)}
+      <section class="list task-list">
+        ${tasks.length ? tasks.map(renderTaskCard).join("") : `<div class="empty">조건에 맞는 업무가 없습니다.</div>`}
+      </section>
+    </div>
   `;
 }
 
@@ -1746,27 +1819,30 @@ function renderTaskForm() {
   `;
 }
 
-function renderBoard() {
-  const tasks = filteredTasks("team");
+function renderTaskBoard(tasks) {
   return `
-    ${renderHead("업무 보드", "상태별로 팀 업무를 훑고, 카드에서 바로 상태를 바꿉니다.", `<button class="btn primary" data-view="tasks" data-task-scope="mine">업무로 이동</button>`)}
-    ${renderFilters()}
-    <div class="board">
+    <section class="task-board-panel">
+      <div class="section-title">
+        <h2>상태 보드</h2>
+        <span class="muted">${tasks.length}개 업무</span>
+      </div>
+      <div class="board">
       ${Object.entries(STATUS_LABEL).map(([status, label]) => `
         <section class="column">
           <h3>${label}</h3>
           ${tasks.filter((task) => task.status === status).map((task) => `
-            <div class="mini-task">
+            <button class="mini-task board-mini-task" data-action="open-task" data-task-id="${task.id}">
               <strong>${escapeHtml(task.title)}</strong>
               <div class="task-meta">
                 <span class="pill">${escapeHtml(profileName(task.assignee_id))}</span>
                 <span class="pill ${task.priority}">${PRIORITY_LABEL[task.priority]}</span>
               </div>
-            </div>
+            </button>
           `).join("") || `<div class="empty">비어 있음</div>`}
         </section>
       `).join("")}
-    </div>
+      </div>
+    </section>
   `;
 }
 
@@ -2277,7 +2353,7 @@ function renderMessageRow(message) {
   const latestText = latest?.body || message.body;
   return `
     <button class="message-row ${unread ? "unread" : ""} ${state.activeMessageId === message.id ? "active" : ""}" data-action="open-message" data-message-id="${message.id}">
-      ${message.is_private ? renderAvatar(message.peer_id) : renderTeamAvatar()}
+      ${message.is_private ? renderAvatarWithRole(message.peer_id) : renderTeamAvatar()}
       <span class="message-row-main">
         <span class="message-row-name">${escapeHtml(name)}</span>
         <span class="message-row-preview">${escapeHtml(latestText)}</span>
@@ -2295,7 +2371,7 @@ function renderMessageDetail(message) {
   return `
     <article class="message-thread">
       <div class="message-thread-head">
-        ${message.is_private ? renderAvatar(message.peer_id) : renderTeamAvatar()}
+        ${message.is_private ? renderAvatarWithRole(message.peer_id) : renderTeamAvatar()}
         <div>
           <h2>${escapeHtml(title)}</h2>
           <p>${message.is_private ? "개인 메시지" : escapeHtml(state.workspace?.name || "팀")}</p>
@@ -2314,14 +2390,12 @@ function renderMessageDetail(message) {
 
 function renderChatBubble(item, isPrivate = false) {
   const mine = item.author_id === state.user?.id;
-  const role = memberRole(item.author_id);
   return `
     <div class="chat-line ${mine ? "mine" : "theirs"}">
-      ${mine ? "" : renderAvatar(item.author_id, "small")}
+      ${renderAvatarWithRole(item.author_id, "small")}
       <div class="chat-bubble">
         <strong class="chat-author">
           <span>${escapeHtml(profileName(item.author_id))}</span>
-          ${isPrivate ? "" : roleBadge(role)}
         </strong>
         <span>${escapeHtml(item.body)}</span>
       </div>
@@ -2459,11 +2533,30 @@ function renderAuth() {
             <button class="btn" name="intent" value="signup">회원가입</button>
           </div>
         </form>
-        <p class="muted">${HAS_SUPABASE ? "회원가입 후 이메일 확인 설정에 따라 바로 로그인되지 않을 수 있습니다." : "데모 계정: admin@worktodo.local / admin123"}</p>
+        ${HAS_SUPABASE ? `<p class="muted">회원가입 후 이메일 확인 설정에 따라 바로 로그인되지 않을 수 있습니다.</p>` : renderDemoAccounts()}
       </section>
     </main>
   `;
   bindAuthEvents();
+}
+
+function renderDemoAccounts() {
+  return `
+    <div class="demo-account-panel">
+      <span class="demo-account-title">데모 계정</span>
+      <div class="demo-account-list">
+        ${DEMO_ACCOUNT_HINTS.map((account) => `
+          <button type="button" class="demo-account" data-demo-email="${account.email}" data-demo-password="${account.password}">
+            ${roleBadge(account.role)}
+            <span>
+              <strong>${escapeHtml(account.name)}</strong>
+              <small>${escapeHtml(account.email)} / ${escapeHtml(account.password)}</small>
+            </span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
 }
 
 function bindEvents() {
@@ -2494,6 +2587,12 @@ function bindEvents() {
 
   document.querySelector("[data-action='toggle-workspace-menu']")?.addEventListener("click", () => {
     state.workspaceMenuOpen = !state.workspaceMenuOpen;
+    if (!state.workspaceMenuOpen) state.creatingWorkspaceFromMenu = false;
+    render();
+  });
+
+  document.querySelector("[data-action='show-workspace-create']")?.addEventListener("click", () => {
+    state.creatingWorkspaceFromMenu = true;
     render();
   });
 
@@ -2505,6 +2604,7 @@ function bindEvents() {
       state.activeNoticeId = null;
       state.activeMessageId = null;
       state.workspaceMenuOpen = false;
+      state.creatingWorkspaceFromMenu = false;
       await refreshData();
       render();
       toast("팀을 전환했습니다.");
@@ -2517,10 +2617,11 @@ function bindEvents() {
   document.querySelectorAll("[data-admin-workspace-choice]").forEach((button) => {
     button.addEventListener("click", async () => {
       try {
-        await api.setWorkspace(button.dataset.adminWorkspaceChoice);
-        state.adminWorkspaceId = button.dataset.adminWorkspaceChoice;
-        state.workspaceMenuOpen = false;
-        await refreshData();
+      await api.setWorkspace(button.dataset.adminWorkspaceChoice);
+      state.adminWorkspaceId = button.dataset.adminWorkspaceChoice;
+      state.workspaceMenuOpen = false;
+      state.creatingWorkspaceFromMenu = false;
+      await refreshData();
         state.view = "dashboard";
         render();
       } catch (error) {
@@ -2705,6 +2806,7 @@ function bindEvents() {
   });
 
   document.querySelector("[data-member-edit-form]")?.addEventListener("submit", handleMemberEditSubmit);
+  document.querySelector("[data-create-workspace-form]")?.addEventListener("submit", handleCreateWorkspaceSubmit);
   document.querySelector("[data-invite-form]")?.addEventListener("submit", handleInviteSubmit);
   document.querySelector("[data-action='copy-invite']")?.addEventListener("click", async () => {
     try {
@@ -2789,6 +2891,16 @@ function bindNoWorkspaceEvents() {
 }
 
 function bindAuthEvents() {
+  document.querySelectorAll("[data-demo-email]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const form = document.querySelector("[data-auth-form]");
+      if (!form) return;
+      form.elements.email.value = button.dataset.demoEmail || "";
+      form.elements.password.value = button.dataset.demoPassword || "";
+      form.elements.full_name.value = "";
+    });
+  });
+
   document.querySelector("[data-auth-form]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const submitter = event.submitter;
@@ -2986,6 +3098,8 @@ async function handleCreateWorkspaceSubmit(event) {
     await api.createWorkspace(name);
     await refreshData();
     state.view = "home";
+    state.workspaceMenuOpen = false;
+    state.creatingWorkspaceFromMenu = false;
     render();
     toast("새 팀을 만들었습니다.");
   } catch (error) {

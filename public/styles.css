@@ -11,6 +11,8 @@
   --line: #d8e0ea;
   --brand: #2563eb;
   --brand-2: #0f766e;
+  --task-mine: #2563eb;
+  --task-team: #f97316;
   --danger: #dc2626;
   --warning: #b45309;
   --ok: #15803d;
@@ -30,6 +32,8 @@ body[data-theme="dark"] {
   --line: #30363d;
   --brand: #58a6ff;
   --brand-2: #56d4dd;
+  --task-mine: #60a5fa;
+  --task-team: #fb923c;
   --danger: #ff7b72;
   --warning: #d29922;
   --ok: #7ee787;
@@ -237,6 +241,22 @@ body[data-theme="dark"] .btn.primary {
   font-size: 11px;
 }
 
+.workspace-menu-divider {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--line);
+}
+
+.workspace-menu button.workspace-add {
+  color: var(--brand);
+}
+
+.workspace-create-form {
+  display: grid;
+  gap: 8px;
+  padding: 6px 4px 4px;
+}
+
 .workspace-kicker {
   color: var(--muted);
   font-size: 11px;
@@ -292,6 +312,14 @@ body[data-theme="dark"] .btn.primary {
   font-size: 12px;
   font-weight: 900;
   line-height: 1;
+}
+
+.role-dot.compact {
+  min-width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 2px solid var(--surface);
+  font-size: 8px;
 }
 
 .role-dot.super-admin {
@@ -739,17 +767,42 @@ textarea:focus {
   margin-top: 14px;
 }
 
+.task-page {
+  margin: -12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--task-scope-color) 14%, transparent), transparent 320px);
+}
+
+.task-page-mine {
+  --task-scope-color: var(--task-mine);
+}
+
+.task-page-team {
+  --task-scope-color: var(--task-team);
+}
+
+.task-page .page-head h1 {
+  color: color-mix(in srgb, var(--task-scope-color) 56%, var(--text));
+}
+
 .task-workspace {
   margin-bottom: 18px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--brand) 8%, var(--surface)), var(--surface));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--task-scope-color, var(--brand)) 18%, var(--surface)), var(--surface) 72%),
+    var(--surface);
   box-shadow: var(--shadow);
 }
 
 .task-workspace.team-scope {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--warning) 10%, var(--surface)), var(--surface));
+  --task-scope-color: var(--task-team);
+}
+
+.task-workspace.mine-scope {
+  --task-scope-color: var(--task-mine);
 }
 
 .task-scope-tabs {
@@ -776,7 +829,7 @@ textarea:focus {
 .task-scope-tabs button.active,
 .message-tabs button.active {
   background: var(--surface);
-  color: var(--brand);
+  color: var(--task-scope-color, var(--brand));
   box-shadow: 0 8px 18px rgba(22, 32, 46, 0.10);
 }
 
@@ -812,12 +865,25 @@ textarea:focus {
   padding-bottom: 4px;
 }
 
+.task-board-panel {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--task-scope-color, var(--brand)) 18%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--task-scope-color, var(--brand)) 7%, var(--surface));
+  box-shadow: 0 14px 36px rgba(22, 32, 46, 0.08);
+}
+
+.task-board-panel .section-title {
+  margin-bottom: 12px;
+}
+
 .column {
-  min-height: 420px;
+  min-height: 220px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--surface-2) 76%, var(--task-scope-color, var(--brand)));
 }
 
 .column h3 {
@@ -826,11 +892,15 @@ textarea:focus {
 }
 
 .mini-task {
+  display: block;
+  width: 100%;
   margin-bottom: 10px;
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
+  color: var(--text);
+  text-align: left;
 }
 
 .mini-task strong {
@@ -888,6 +958,56 @@ textarea:focus {
 .auth-card {
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(16px);
+}
+
+.demo-account-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.demo-account-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.demo-account-list {
+  display: grid;
+  gap: 7px;
+}
+
+.demo-account {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 84%, var(--surface-2));
+  color: var(--text);
+  text-align: left;
+}
+
+.demo-account:hover {
+  border-color: color-mix(in srgb, var(--brand) 32%, var(--line));
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+}
+
+.demo-account strong,
+.demo-account small {
+  display: block;
+}
+
+.demo-account small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .empty-workspace-card {
@@ -1183,6 +1303,24 @@ textarea:focus {
   font-weight: 900;
 }
 
+.avatar-with-role {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: max-content;
+  height: max-content;
+  flex: 0 0 auto;
+}
+
+.avatar-role-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+}
+
 .person-avatar img {
   width: 100%;
   height: 100%;
@@ -1298,6 +1436,14 @@ textarea:focus {
 
 .chat-line.mine {
   justify-content: flex-end;
+}
+
+.chat-line.mine .avatar-with-role {
+  order: 2;
+}
+
+.chat-line.mine .chat-bubble {
+  order: 1;
 }
 
 .chat-bubble {
