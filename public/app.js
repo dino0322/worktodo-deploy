@@ -2644,7 +2644,9 @@ function bindEvents() {
 
   document.querySelectorAll(".modal-card").forEach((card) => {
     card.addEventListener("pointerdown", (event) => event.stopPropagation());
+    card.addEventListener("mousedown", (event) => event.stopPropagation());
     card.addEventListener("click", (event) => event.stopPropagation());
+    card.addEventListener("focusin", (event) => event.stopPropagation());
   });
 
   document.querySelectorAll("[data-view]").forEach((button) => {
@@ -2772,7 +2774,7 @@ function bindEvents() {
     });
   });
 
-  document.querySelectorAll("[data-message-scope]").forEach((button) => {
+  document.querySelectorAll("button[data-message-scope]").forEach((button) => {
     button.addEventListener("click", () => {
       state.messageScope = button.dataset.messageScope;
       state.activeMessageId = null;
@@ -2787,15 +2789,15 @@ function bindEvents() {
     const unread = unreadMessages(conversation || {});
     const unreadIds = unread.map((message) => message.id);
     state.activeMessageId = button.dataset.messageId;
-    state.messages = state.messages.map((message) => unreadIds.includes(message.id)
-      ? { ...message, read_by: Array.from(new Set([...(message.read_by || []), state.user.id])) }
-      : message);
+    if (unreadIds.length) {
+      state.messages = state.messages.map((message) => unreadIds.includes(message.id)
+        ? { ...message, read_by: Array.from(new Set([...(message.read_by || []), state.user.id])) }
+        : message);
+    }
     render();
+    if (!unreadIds.length) return;
     try {
       await Promise.all(unreadIds.map((id) => api.markMessageRead?.(id)));
-      await refreshData();
-      state.activeMessageId = button.dataset.messageId;
-      render();
     } catch (error) {
       toast(error.message || "읽음 처리에 실패했습니다.");
     }
@@ -2965,8 +2967,12 @@ function bindEvents() {
   document.querySelector("[data-notice-form]")?.addEventListener("submit", handleNoticeSubmit);
   document.querySelector("[data-question-form]")?.addEventListener("submit", handleQuestionSubmit);
   document.querySelector("[data-direct-message-form]")?.addEventListener("submit", handleDirectMessageSubmit);
-  document.querySelector("[data-direct-message-form]")?.addEventListener("pointerdown", (event) => event.stopPropagation());
-  document.querySelector("[data-direct-message-form]")?.addEventListener("click", (event) => event.stopPropagation());
+  document.querySelectorAll("[data-direct-message-form], [data-conversation-reply-form]").forEach((form) => {
+    form.addEventListener("pointerdown", (event) => event.stopPropagation());
+    form.addEventListener("mousedown", (event) => event.stopPropagation());
+    form.addEventListener("click", (event) => event.stopPropagation());
+    form.addEventListener("focusin", (event) => event.stopPropagation());
+  });
 
   document.querySelectorAll("[data-draft]").forEach((form) => {
     form.addEventListener("input", () => saveDraft(form.dataset.draft, form));
