@@ -2614,6 +2614,7 @@ function renderDemoAccounts() {
 
 function bindEvents() {
   document.querySelectorAll(".modal-card").forEach((card) => {
+    card.addEventListener("pointerdown", (event) => event.stopPropagation());
     card.addEventListener("click", (event) => event.stopPropagation());
   });
 
@@ -2773,6 +2774,7 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-notice']").forEach((item) => {
     item.addEventListener("click", (event) => {
+      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
       if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
       state.activeNoticeId = null;
       render();
@@ -2781,6 +2783,7 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-task']").forEach((item) => {
     item.addEventListener("click", (event) => {
+      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
       if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
       state.activeTaskId = null;
       render();
@@ -2789,6 +2792,7 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-form']").forEach((item) => {
     item.addEventListener("click", (event) => {
+      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
       if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
       state.activeForm = null;
       state.editingTaskId = null;
@@ -2799,6 +2803,7 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-invite']").forEach((item) => {
     item.addEventListener("click", (event) => {
+      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
       if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
       state.inviteOpen = false;
       render();
@@ -2807,6 +2812,7 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-profile-edit']").forEach((item) => {
     item.addEventListener("click", (event) => {
+      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
       if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
       state.profileEditOpen = false;
       render();
@@ -2874,6 +2880,7 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-member-edit']").forEach((item) => {
     item.addEventListener("click", (event) => {
+      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
       if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
       state.activeMemberId = null;
       render();
@@ -2911,6 +2918,8 @@ function bindEvents() {
   document.querySelector("[data-notice-form]")?.addEventListener("submit", handleNoticeSubmit);
   document.querySelector("[data-question-form]")?.addEventListener("submit", handleQuestionSubmit);
   document.querySelector("[data-direct-message-form]")?.addEventListener("submit", handleDirectMessageSubmit);
+  document.querySelector("[data-direct-message-form]")?.addEventListener("pointerdown", (event) => event.stopPropagation());
+  document.querySelector("[data-direct-message-form]")?.addEventListener("click", (event) => event.stopPropagation());
 
   document.querySelectorAll("[data-draft]").forEach((form) => {
     form.addEventListener("input", () => saveDraft(form.dataset.draft, form));
