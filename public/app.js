@@ -683,9 +683,12 @@ function makeDemoApi() {
         ? data.members.filter((item) => item.workspace_id === workspace.id && item.status !== "disabled")
         : [];
       const visibleTasks = data.tasks.filter((item) =>
-        (item.visibility || "team") === "team"
-        || item.creator_id === sessionUserId
-        || item.assignee_id === sessionUserId
+        !item.archived_at
+        && (
+          (item.visibility || "team") === "team"
+          || item.creator_id === sessionUserId
+          || item.assignee_id === sessionUserId
+        )
       );
       const visibleTaskIds = new Set(visibleTasks.map((item) => item.id));
       return {
@@ -832,6 +835,13 @@ function makeDemoApi() {
       data.tasks = data.tasks.map((task) => task.id === id ? { ...task, ...patch, updated_at: new Date().toISOString() } : task);
       writeDemo(data);
       return data.tasks.find((task) => task.id === id);
+    },
+    async deleteTask(id) {
+      const data = readDemo();
+      data.tasks = data.tasks.map((task) => task.id === id
+        ? { ...task, archived_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+        : task);
+      writeDemo(data);
     },
     async addComment(taskId, body) {
       const data = readDemo();
@@ -1241,6 +1251,13 @@ function makeLiveApi() {
       if (error) throw error;
       return data;
     },
+    async deleteTask(id) {
+      const { error } = await supabaseClient
+        .from("tasks")
+        .update({ archived_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+    },
     async addComment(taskId, body) {
       const { data, error } = await supabaseClient
         .from("task_comments")
@@ -1479,6 +1496,10 @@ function isMine(authorId) {
 
 function canEditTask(task) {
   return Boolean(task && isMine(task.creator_id) && ((task.visibility || "team") !== "team" || isAdmin()));
+}
+
+function canDeleteTask() {
+  return isAdmin();
 }
 
 function memberRole(userId) {
@@ -1813,6 +1834,7 @@ function renderTaskCard(task) {
   const comments = state.comments.filter((comment) => comment.task_id === task.id);
   const project = state.projects.find((item) => item.id === task.project_id);
   const editable = canEditTask(task);
+  const deletable = canDeleteTask(task);
   return `
     <article class="task-card">
       <div class="task-top">
@@ -1835,6 +1857,7 @@ function renderTaskCard(task) {
           </select>
           <button class="btn compact" data-action="edit-task" data-task-id="${task.id}">수정</button>
         ` : ""}
+        ${deletable ? `<button class="btn compact danger" data-action="delete-task" data-task-id="${task.id}">삭제</button>` : ""}
         <button class="btn" data-action="toggle-comments" data-task-id="${task.id}">댓글 ${comments.length}</button>
       </div>
       <div class="comment-list hidden" data-comments="${task.id}">
@@ -1859,11 +1882,11 @@ function renderComment(comment) {
 
 function renderTaskForm() {
   const editing = state.editingTaskId ? state.tasks.find((task) => task.id === state.editingTaskId) : null;
-  const draft = editing || loadDraft("task");
   const visibility = editing ? (editing.visibility || "team") : (state.taskScope === "team" ? "team" : "private");
+  const draft = editing || loadDraft(`task:${visibility}`);
   const isTeamTask = visibility === "team";
   return `
-      <form class="form" data-task-form ${editing ? `data-edit-task-id="${editing.id}"` : `data-draft="task"`}>
+      <form class="form" data-task-form data-task-visibility="${visibility}" ${editing ? `data-edit-task-id="${editing.id}"` : `data-draft="task:${visibility}"`}>
         <input class="input" name="title" placeholder="업무 제목" value="${escapeHtml(draft.title || "")}" required>
         <textarea name="description" placeholder="업무 설명">${escapeHtml(draft.description || "")}</textarea>
         <div class="form-row">
@@ -2203,6 +2226,7 @@ function renderTaskModal() {
   if (!task) return "";
   const comments = state.comments.filter((comment) => comment.task_id === task.id);
   const editable = canEditTask(task);
+  const deletable = canDeleteTask(task);
   return `
     <div class="modal-overlay" data-action="close-task">
       <section class="modal-card pop-card" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
@@ -2215,7 +2239,12 @@ function renderTaskModal() {
         </div>
         <h2 id="taskModalTitle">${escapeHtml(task.title)}</h2>
         <p class="notice-full">${escapeHtml(task.description || "설명이 없습니다.")}</p>
-        ${editable ? `<div class="modal-actions"><button class="btn primary compact" data-action="edit-task" data-task-id="${task.id}">업무 수정</button></div>` : ""}
+        ${editable || deletable ? `
+          <div class="modal-actions">
+            ${editable ? `<button class="btn primary compact" data-action="edit-task" data-task-id="${task.id}">업무 수정</button>` : ""}
+            ${deletable ? `<button class="btn danger compact" data-action="delete-task" data-task-id="${task.id}">업무 삭제</button>` : ""}
+          </div>
+        ` : ""}
         <div class="comment-list modal-comments">
           ${comments.length ? comments.map(renderComment).join("") : `<div class="muted">아직 댓글이 없습니다.</div>`}
           <form class="form" data-comment-form="${task.id}">
@@ -2773,6 +2802,10 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-action='delete-task']").forEach((button) => {
+    button.addEventListener("click", handleTaskDelete);
+  });
+
   document.querySelectorAll("[data-action='open-notice']").forEach((button) => {
     button.addEventListener("click", () => {
       state.activeNoticeId = button.dataset.noticeId;
@@ -3091,7 +3124,9 @@ async function handleTaskSubmit(event) {
   const form = new FormData(event.currentTarget);
   const editId = event.currentTarget.dataset.editTaskId;
   const editing = editId ? state.tasks.find((item) => item.id === editId) : null;
-  const visibility = editing ? (editing.visibility || "team") : (state.taskScope === "team" ? "team" : "private");
+  const visibility = editing
+    ? (editing.visibility || "team")
+    : (event.currentTarget.dataset.taskVisibility || "private");
   if (visibility === "team" && !isAdmin()) {
     toast("팀 업무는 팀장과 전체 관리자만 작성할 수 있습니다.");
     return;
@@ -3113,7 +3148,7 @@ async function handleTaskSubmit(event) {
       state.editingTaskId = null;
     } else {
       await api.createTask(task);
-      clearDraft("task");
+      clearDraft(`task:${visibility}`);
     }
     state.activeForm = null;
     await refreshData();
@@ -3121,6 +3156,23 @@ async function handleTaskSubmit(event) {
     toast(editing ? "업무를 수정했습니다." : "업무를 만들었습니다.");
   } catch (error) {
     toast(error.message || "업무 저장에 실패했습니다.");
+  }
+}
+
+async function handleTaskDelete(event) {
+  event.preventDefault();
+  const task = state.tasks.find((item) => item.id === event.currentTarget.dataset.taskId);
+  if (!task || !canDeleteTask(task)) return;
+  if (!window.confirm("업무를 삭제할까요?")) return;
+  try {
+    await api.deleteTask(task.id);
+    state.activeTaskId = null;
+    state.activeForm = null;
+    await refreshData();
+    render();
+    toast("업무를 삭제했습니다.");
+  } catch (error) {
+    toast(error.message || "업무 삭제에 실패했습니다.");
   }
 }
 

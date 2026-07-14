@@ -414,17 +414,23 @@ create policy "tasks update authors"
 on public.tasks for update
 to authenticated
 using (
-  creator_id = auth.uid()
-  and (
-    visibility <> 'team'
-    or public.is_workspace_admin(workspace_id)
+  public.is_workspace_admin(workspace_id)
+  or (
+    creator_id = auth.uid()
+    and (
+      visibility <> 'team'
+      or public.is_workspace_admin(workspace_id)
+    )
   )
 )
 with check (
-  creator_id = auth.uid()
-  and (
-    visibility <> 'team'
-    or public.is_workspace_admin(workspace_id)
+  public.is_workspace_admin(workspace_id)
+  or (
+    creator_id = auth.uid()
+    and (
+      visibility <> 'team'
+      or public.is_workspace_admin(workspace_id)
+    )
   )
 );
 
