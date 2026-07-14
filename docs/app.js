@@ -2613,6 +2613,12 @@ function renderDemoAccounts() {
 }
 
 function bindEvents() {
+  document.querySelectorAll(".modal-overlay").forEach((overlay) => {
+    overlay.addEventListener("pointerdown", (event) => {
+      overlay.dataset.backdropPointer = event.target === overlay ? "true" : "false";
+    }, true);
+  });
+
   document.querySelectorAll(".modal-card").forEach((card) => {
     card.addEventListener("pointerdown", (event) => event.stopPropagation());
     card.addEventListener("click", (event) => event.stopPropagation());
@@ -2774,8 +2780,9 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-notice']").forEach((item) => {
     item.addEventListener("click", (event) => {
-      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
-      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      if (event.currentTarget.classList.contains("modal-overlay")
+        && (event.target !== event.currentTarget || event.currentTarget.dataset.backdropPointer !== "true")) return;
+      if (!event.currentTarget.classList.contains("modal-overlay") && !event.currentTarget.classList.contains("modal-close")) return;
       state.activeNoticeId = null;
       render();
     });
@@ -2783,8 +2790,9 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-task']").forEach((item) => {
     item.addEventListener("click", (event) => {
-      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
-      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      if (event.currentTarget.classList.contains("modal-overlay")
+        && (event.target !== event.currentTarget || event.currentTarget.dataset.backdropPointer !== "true")) return;
+      if (!event.currentTarget.classList.contains("modal-overlay") && !event.currentTarget.classList.contains("modal-close")) return;
       state.activeTaskId = null;
       render();
     });
@@ -2792,8 +2800,9 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-form']").forEach((item) => {
     item.addEventListener("click", (event) => {
-      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
-      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      if (event.currentTarget.classList.contains("modal-overlay")
+        && (event.target !== event.currentTarget || event.currentTarget.dataset.backdropPointer !== "true")) return;
+      if (!event.currentTarget.classList.contains("modal-overlay") && !event.currentTarget.classList.contains("modal-close")) return;
       state.activeForm = null;
       state.editingTaskId = null;
       state.editingNoticeId = null;
@@ -2803,8 +2812,9 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-invite']").forEach((item) => {
     item.addEventListener("click", (event) => {
-      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
-      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      if (event.currentTarget.classList.contains("modal-overlay")
+        && (event.target !== event.currentTarget || event.currentTarget.dataset.backdropPointer !== "true")) return;
+      if (!event.currentTarget.classList.contains("modal-overlay") && !event.currentTarget.classList.contains("modal-close")) return;
       state.inviteOpen = false;
       render();
     });
@@ -2812,8 +2822,9 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-profile-edit']").forEach((item) => {
     item.addEventListener("click", (event) => {
-      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
-      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      if (event.currentTarget.classList.contains("modal-overlay")
+        && (event.target !== event.currentTarget || event.currentTarget.dataset.backdropPointer !== "true")) return;
+      if (!event.currentTarget.classList.contains("modal-overlay") && !event.currentTarget.classList.contains("modal-close")) return;
       state.profileEditOpen = false;
       render();
     });
@@ -2843,19 +2854,29 @@ function bindEvents() {
     });
   });
 
-  document.querySelector("[data-action='close-member-menu']")?.addEventListener("click", () => {
+  document.querySelectorAll(".member-context-menu").forEach((menu) => {
+    menu.addEventListener("pointerdown", (event) => event.stopPropagation());
+    menu.addEventListener("click", (event) => event.stopPropagation());
+  });
+
+  document.querySelector("[data-action='close-member-menu']")?.addEventListener("click", (event) => {
+    if (event.target !== event.currentTarget) return;
     state.memberMenu = null;
     render();
   });
 
-  document.querySelector("[data-action='edit-member']")?.addEventListener("click", () => {
+  document.querySelector("[data-action='edit-member']")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     state.activeMemberId = state.memberMenu?.userId || null;
     if (!canManageMember(state.activeMemberId)) return;
     state.memberMenu = null;
     render();
   });
 
-  document.querySelector("[data-action='message-member']")?.addEventListener("click", () => {
+  document.querySelector("[data-action='message-member']")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     const userId = state.memberMenu?.userId;
     if (!userId || userId === state.user.id) return;
     state.activeMessageTargetId = userId;
@@ -2864,7 +2885,9 @@ function bindEvents() {
     render();
   });
 
-  document.querySelector("[data-action='remove-member']")?.addEventListener("click", async () => {
+  document.querySelector("[data-action='remove-member']")?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     const userId = state.memberMenu?.userId;
     if (!canManageMember(userId)) return;
     try {
@@ -2880,8 +2903,9 @@ function bindEvents() {
 
   document.querySelectorAll("[data-action='close-member-edit']").forEach((item) => {
     item.addEventListener("click", (event) => {
-      if (event.currentTarget.classList.contains("modal-overlay") && event.target !== event.currentTarget) return;
-      if (event.target.closest(".modal-card") && !event.target.closest(".modal-close")) return;
+      if (event.currentTarget.classList.contains("modal-overlay")
+        && (event.target !== event.currentTarget || event.currentTarget.dataset.backdropPointer !== "true")) return;
+      if (!event.currentTarget.classList.contains("modal-overlay") && !event.currentTarget.classList.contains("modal-close")) return;
       state.activeMemberId = null;
       render();
     });
