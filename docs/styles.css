@@ -104,14 +104,15 @@ button {
   height: 40px;
   padding: 9px;
   border-radius: 8px;
-  background:
-    linear-gradient(135deg, var(--brand), var(--brand-2));
-  color: #fff;
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--brand) 24%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--line));
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+  color: var(--brand);
+  box-shadow: none;
 }
 
 body[data-theme="dark"] .brand-mark {
-  box-shadow: 0 10px 26px color-mix(in srgb, var(--brand) 18%, transparent);
+  background: color-mix(in srgb, var(--brand) 13%, var(--surface));
+  color: #8ab4ff;
 }
 
 .brand-check {
