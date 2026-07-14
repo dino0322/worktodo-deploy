@@ -1908,30 +1908,55 @@ function renderTaskForm() {
     : (isTeamTask ? `workspace:${state.workspace?.id}` : "personal");
   return `
       <form class="form" data-task-form data-task-visibility="${visibility}" ${editing ? `data-edit-task-id="${editing.id}"` : `data-draft="task:${visibility}"`}>
-        <input class="input" name="title" placeholder="업무 제목" value="${escapeHtml(draft.title || "")}" required>
-        <textarea name="description" placeholder="업무 설명">${escapeHtml(draft.description || "")}</textarea>
+        <label class="form-field">
+          <span>업무 제목</span>
+          <input class="input" name="title" placeholder="업무 제목" value="${escapeHtml(draft.title || "")}" required>
+        </label>
+        <label class="form-field">
+          <span>업무 설명</span>
+          <textarea name="description" placeholder="업무 설명">${escapeHtml(draft.description || "")}</textarea>
+        </label>
         <div class="form-row">
           ${isTeamTask ? `
-            <select name="assignee_id">
-              ${state.profiles.map((profile) => option(profile.id, profile.full_name || profile.email, draft.assignee_id || state.user.id)).join("")}
-            </select>
+            <label class="form-field">
+              <span>담당자</span>
+              <select name="assignee_id">
+                ${state.profiles.map((profile) => option(profile.id, profile.full_name || profile.email, draft.assignee_id || state.user.id)).join("")}
+              </select>
+            </label>
           ` : `
             <input type="hidden" name="assignee_id" value="${escapeHtml(state.user.id)}">
+            <div class="form-field">
+              <span>담당자</span>
+              <strong class="readonly-field">${escapeHtml(profileName(state.user.id))}</strong>
+            </div>
           `}
-          <select name="priority">
-            ${Object.entries(PRIORITY_LABEL).map(([value, label]) => option(value, label, draft.priority || "normal")).join("")}
-          </select>
+          <label class="form-field">
+            <span>중요도</span>
+            <select name="priority">
+              ${Object.entries(PRIORITY_LABEL).map(([value, label]) => option(value, label, draft.priority || "normal")).join("")}
+            </select>
+          </label>
         </div>
         <div class="form-row">
-          <select name="status">
-            ${Object.entries(STATUS_LABEL).map(([value, label]) => option(value, label, draft.status || "todo")).join("")}
-          </select>
-          <input class="input" name="due_date" type="date" value="${escapeHtml(draft.due_date || "")}">
+          <label class="form-field">
+            <span>상태</span>
+            <select name="status">
+              ${Object.entries(STATUS_LABEL).map(([value, label]) => option(value, label, draft.status || "todo")).join("")}
+            </select>
+          </label>
+          <label class="form-field">
+            <span>마감일</span>
+            <input class="input" name="due_date" type="date" value="${escapeHtml(draft.due_date || "")}">
+          </label>
         </div>
-        <select name="task_target" ${editing ? "disabled" : ""}>
-          ${option("personal", "개인업무", selectedTarget)}
-          ${availableTeams.map((workspace) => option(`workspace:${workspace.id}`, workspace.name, selectedTarget)).join("")}
-        </select>
+        <label class="form-field">
+          <span>업무 위치</span>
+          <select name="task_target" ${editing ? "disabled" : ""}>
+            ${option("personal", "개인업무", selectedTarget)}
+            ${availableTeams.map((workspace) => option(`workspace:${workspace.id}`, workspace.name, selectedTarget)).join("")}
+          </select>
+        </label>
         ${editing ? `<input type="hidden" name="task_target" value="${escapeHtml(selectedTarget)}">` : ""}
         <button class="btn primary">${editing ? "업무 수정" : "업무 저장"}</button>
       </form>

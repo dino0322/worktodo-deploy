@@ -889,6 +889,29 @@ textarea:focus {
   gap: 10px;
 }
 
+.form-field {
+  display: grid;
+  gap: 6px;
+}
+
+.form-field > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.readonly-field {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 14px;
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(4, minmax(220px, 1fr));
