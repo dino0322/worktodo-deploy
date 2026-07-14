@@ -1612,15 +1612,21 @@ textarea:focus {
 }
 
 .chat-stream {
-  display: grid;
-  align-content: end;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
+  min-height: 0;
   max-height: 410px;
   overflow: auto;
   padding: 18px;
   background:
     radial-gradient(circle at top left, color-mix(in srgb, var(--brand) 10%, transparent), transparent 34%),
     var(--surface);
+}
+
+.chat-stream::before {
+  content: "";
+  margin-top: auto;
 }
 
 .chat-line {

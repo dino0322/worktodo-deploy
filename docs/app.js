@@ -1591,6 +1591,13 @@ function workspaceSelect() {
   `;
 }
 
+function scrollActiveChatToBottom() {
+  if (state.view !== "messages" || !state.activeMessageId) return;
+  const stream = document.querySelector(".chat-stream");
+  if (!stream) return;
+  stream.scrollTop = stream.scrollHeight;
+}
+
 function render() {
   applyTheme();
   if (!state.user) {
@@ -1649,6 +1656,7 @@ function render() {
     </div>
   `;
   bindEvents();
+  requestAnimationFrame(scrollActiveChatToBottom);
 }
 
 function renderNoWorkspace() {
