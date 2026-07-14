@@ -303,12 +303,25 @@ function messagePeerName(conversation) {
   return profileName(conversation.peer_id);
 }
 
+function teamConversationId() {
+  return `team:${state.workspace?.id || "workspace"}`;
+}
+
+function privateConversationId(peerId) {
+  return peerId ? `private:${peerId}` : null;
+}
+
+function conversationIdFromMessage(message) {
+  if (!message?.is_private) return teamConversationId();
+  return privateConversationId(messagePeerId(message));
+}
+
 function sortedMessages(scope = state.messageScope) {
   const visible = visibleMessages();
   if (scope === "team") {
     const teamMessages = visible.filter((message) => !message.is_private);
     return [{
-      id: `team:${state.workspace?.id || "workspace"}`,
+      id: teamConversationId(),
       is_private: false,
       is_team_thread: true,
       messages: teamMessages,
@@ -323,7 +336,7 @@ function sortedMessages(scope = state.messageScope) {
     if (!peerId) return;
     if (!grouped.has(peerId)) {
       grouped.set(peerId, {
-        id: `private:${peerId}`,
+        id: privateConversationId(peerId),
         is_private: true,
         peer_id: peerId,
         messages: []
@@ -3192,7 +3205,7 @@ async function handleDirectMessageSubmit(event) {
   const recipientId = state.activeMessageTargetId;
   if (!recipientId) return;
   try {
-    await api.createMessage({
+    const created = await api.createMessage({
       body: form.get("body")?.toString().trim(),
       is_private: true,
       recipient_id: recipientId
@@ -3202,7 +3215,7 @@ async function handleDirectMessageSubmit(event) {
     state.activeMessageTargetId = null;
     state.messageScope = "private";
     await refreshData();
-    state.activeMessageId = `private:${recipientId}`;
+    state.activeMessageId = conversationIdFromMessage(created) || privateConversationId(recipientId);
     state.view = "messages";
     render();
     toast("메시지를 보냈습니다.");
@@ -3232,13 +3245,13 @@ async function handleConversationReplySubmit(event) {
   const scope = event.currentTarget.dataset.messageScope;
   const recipientId = event.currentTarget.dataset.recipientId;
   try {
-    await api.createMessage({
+    const created = await api.createMessage({
       body,
       is_private: scope === "private",
       recipient_id: scope === "private" ? recipientId : null
     });
     await refreshData();
-    state.activeMessageId = event.currentTarget.dataset.conversationReplyForm;
+    state.activeMessageId = conversationIdFromMessage(created) || event.currentTarget.dataset.conversationReplyForm;
     render();
     toast("메시지를 보냈습니다.");
   } catch (error) {
