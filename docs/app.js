@@ -953,6 +953,12 @@ function makeLiveApi() {
       });
       if (error) throw error;
       if (!data.user) throw new Error("회원가입 응답이 비어 있습니다.");
+      if (!data.session) {
+        return {
+          pendingConfirmation: true,
+          email: data.user.email || email
+        };
+      }
       return {
         id: data.user.id,
         email: data.user.email,
@@ -2984,9 +2990,17 @@ function bindAuthEvents() {
       full_name: form.get("full_name")?.toString().trim()
     };
     try {
-      state.user = intent === "signup"
+      const authResult = intent === "signup"
         ? await api.signUp(email, password, profile)
         : await api.signIn(email, password);
+      if (authResult?.pendingConfirmation) {
+        state.user = null;
+        state.authMode = "signin";
+        renderAuth();
+        toast("인증 메일 확인 후 로그인해주세요.");
+        return;
+      }
+      state.user = authResult;
       state.authMode = "signin";
       await refreshData();
       render();
