@@ -1311,6 +1311,31 @@ textarea:focus {
   margin: 14px 0 12px;
 }
 
+.confirm-card {
+  width: min(440px, 100%);
+}
+
+.confirm-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+  font-weight: 950;
+}
+
+.confirm-target {
+  display: block;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
 .modal-close {
   position: absolute;
   top: 12px;

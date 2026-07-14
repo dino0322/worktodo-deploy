@@ -87,6 +87,7 @@ let state = {
   editingNoticeId: null,
   creatingWorkspaceFromMenu: false,
   memberMenu: null,
+  confirmDeleteTaskId: null,
   activeForm: null,
   inviteOpen: false,
   profileOpen: false,
@@ -821,7 +822,7 @@ function makeDemoApi() {
       const record = {
         ...task,
         id: uid(),
-        workspace_id: data.workspace.id,
+        workspace_id: task.workspace_id || data.workspace.id,
         creator_id: demoSessionUserId(),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -1133,7 +1134,7 @@ function makeLiveApi() {
         .from("tasks")
         .insert({
           ...task,
-          workspace_id: state.workspace.id,
+          workspace_id: task.workspace_id || state.workspace.id,
           creator_id: state.user.id
         })
         .select("*")
@@ -1490,6 +1491,20 @@ function userMemberships(userId = state.user?.id) {
   return allMemberships().filter((item) => item.user_id === userId && item.status !== "disabled");
 }
 
+function userWorkspaces(userId = state.user?.id) {
+  const workspaceIds = new Set(userMemberships(userId).map((item) => item.workspace_id));
+  return allWorkspaces().filter((workspace) => workspaceIds.has(workspace.id));
+}
+
+function roleInWorkspace(workspaceId, userId = state.user?.id) {
+  return userMemberships(userId).find((item) => item.workspace_id === workspaceId)?.role || "guest";
+}
+
+function canCreateTeamTask(workspaceId = state.workspace?.id) {
+  if (isSuperAdmin()) return true;
+  return ["super_admin", "admin"].includes(roleInWorkspace(workspaceId));
+}
+
 function isMine(authorId) {
   return Boolean(authorId && authorId === state.user?.id);
 }
@@ -1616,6 +1631,7 @@ function render() {
       ${renderProfileEditModal()}
       ${renderMemberActionMenu()}
       ${renderMemberEditModal()}
+      ${renderConfirmModal()}
     </div>
   `;
   bindEvents();
@@ -1810,7 +1826,7 @@ function renderTaskList(scope = state.taskScope) {
     : "나만 따로 관리하는 개인 업무를 먼저 처리합니다.";
   const tasks = filteredTasks(scope);
   const boardTasks = filteredTasks(scope, { skipStatus: true });
-  const canCreateTask = scope !== "team" || isAdmin();
+  const canCreateTask = scope !== "team" || canCreateTeamTask(state.workspace?.id);
   const taskAction = canCreateTask
     ? `<button class="btn primary" data-action="open-form" data-form-kind="task">새 업무</button>`
     : "";
@@ -1885,6 +1901,11 @@ function renderTaskForm() {
   const visibility = editing ? (editing.visibility || "team") : (state.taskScope === "team" ? "team" : "private");
   const draft = editing || loadDraft(`task:${visibility}`);
   const isTeamTask = visibility === "team";
+  const teams = userWorkspaces();
+  const availableTeams = teams.length ? teams : [state.workspace].filter(Boolean);
+  const selectedTarget = editing
+    ? (isTeamTask ? `workspace:${editing.workspace_id || state.workspace?.id}` : "personal")
+    : (isTeamTask ? `workspace:${state.workspace?.id}` : "personal");
   return `
       <form class="form" data-task-form data-task-visibility="${visibility}" ${editing ? `data-edit-task-id="${editing.id}"` : `data-draft="task:${visibility}"`}>
         <input class="input" name="title" placeholder="업무 제목" value="${escapeHtml(draft.title || "")}" required>
@@ -1907,10 +1928,11 @@ function renderTaskForm() {
           </select>
           <input class="input" name="due_date" type="date" value="${escapeHtml(draft.due_date || "")}">
         </div>
-        <select name="project_id">
-          <option value="">프로젝트 없음</option>
-          ${state.projects.map((project) => option(project.id, project.name, draft.project_id || "")).join("")}
+        <select name="task_target" ${editing ? "disabled" : ""}>
+          ${option("personal", "개인업무", selectedTarget)}
+          ${availableTeams.map((workspace) => option(`workspace:${workspace.id}`, workspace.name, selectedTarget)).join("")}
         </select>
+        ${editing ? `<input type="hidden" name="task_target" value="${escapeHtml(selectedTarget)}">` : ""}
         <button class="btn primary">${editing ? "업무 수정" : "업무 저장"}</button>
       </form>
   `;
@@ -2677,6 +2699,27 @@ function renderDemoAccounts() {
   `;
 }
 
+function renderConfirmModal() {
+  if (!state.confirmDeleteTaskId) return "";
+  const task = state.tasks.find((item) => item.id === state.confirmDeleteTaskId);
+  if (!task) return "";
+  return `
+    <div class="modal-overlay" data-action="cancel-delete-task">
+      <section class="modal-card pop-card confirm-card" role="dialog" aria-modal="true" aria-labelledby="confirmDeleteTitle">
+        <button class="modal-close" type="button" data-action="cancel-delete-task" aria-label="닫기">×</button>
+        <span class="confirm-mark">!</span>
+        <h2 id="confirmDeleteTitle">업무 삭제</h2>
+        <p class="muted">삭제하면 목록에서 사라집니다. 기록은 보관되지만 화면에서는 더 이상 표시되지 않습니다.</p>
+        <strong class="confirm-target">${escapeHtml(task.title)}</strong>
+        <div class="modal-actions">
+          <button class="btn ghost" type="button" data-action="cancel-delete-task">취소</button>
+          <button class="btn danger" type="button" data-action="confirm-delete-task" data-task-id="${task.id}">삭제</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
 function bindEvents() {
   document.querySelectorAll(".modal-overlay").forEach((overlay) => {
     overlay.addEventListener("pointerdown", (event) => {
@@ -2803,7 +2846,12 @@ function bindEvents() {
   });
 
   document.querySelectorAll("[data-action='delete-task']").forEach((button) => {
-    button.addEventListener("click", handleTaskDelete);
+    button.addEventListener("click", () => {
+      const task = state.tasks.find((item) => item.id === button.dataset.taskId);
+      if (!task || !canDeleteTask(task)) return;
+      state.confirmDeleteTaskId = task.id;
+      render();
+    });
   });
 
   document.querySelectorAll("[data-action='open-notice']").forEach((button) => {
@@ -2982,6 +3030,18 @@ function bindEvents() {
     });
   });
 
+  document.querySelectorAll("[data-action='cancel-delete-task']").forEach((item) => {
+    item.addEventListener("click", (event) => {
+      if (event.currentTarget.classList.contains("modal-overlay")
+        && (event.target !== event.currentTarget || event.currentTarget.dataset.backdropPointer !== "true")) return;
+      if (!event.currentTarget.classList.contains("modal-overlay") && !event.currentTarget.classList.contains("modal-close") && !event.currentTarget.classList.contains("btn")) return;
+      state.confirmDeleteTaskId = null;
+      render();
+    });
+  });
+
+  document.querySelector("[data-action='confirm-delete-task']")?.addEventListener("click", handleTaskDelete);
+
   document.querySelector("[data-member-edit-form]")?.addEventListener("submit", handleMemberEditSubmit);
   document.querySelector("[data-create-workspace-form]")?.addEventListener("submit", handleCreateWorkspaceSubmit);
   document.querySelector("[data-invite-form]")?.addEventListener("submit", handleInviteSubmit);
@@ -3124,10 +3184,15 @@ async function handleTaskSubmit(event) {
   const form = new FormData(event.currentTarget);
   const editId = event.currentTarget.dataset.editTaskId;
   const editing = editId ? state.tasks.find((item) => item.id === editId) : null;
+  const taskTarget = form.get("task_target")?.toString() || "personal";
+  const targetWorkspaceId = taskTarget.startsWith("workspace:")
+    ? taskTarget.replace("workspace:", "")
+    : state.workspace?.id;
   const visibility = editing
     ? (editing.visibility || "team")
-    : (event.currentTarget.dataset.taskVisibility || "private");
-  if (visibility === "team" && !isAdmin()) {
+    : (taskTarget === "personal" ? "private" : "team");
+  const workspaceId = editing?.workspace_id || targetWorkspaceId || state.workspace?.id;
+  if (visibility === "team" && !canCreateTeamTask(workspaceId)) {
     toast("팀 업무는 팀장과 전체 관리자만 작성할 수 있습니다.");
     return;
   }
@@ -3138,7 +3203,8 @@ async function handleTaskSubmit(event) {
     priority: form.get("priority")?.toString(),
     status: form.get("status")?.toString(),
     due_date: form.get("due_date")?.toString() || null,
-    project_id: form.get("project_id")?.toString() || null,
+    project_id: null,
+    workspace_id: workspaceId,
     visibility
   };
   try {
@@ -3148,6 +3214,10 @@ async function handleTaskSubmit(event) {
       state.editingTaskId = null;
     } else {
       await api.createTask(task);
+      if (workspaceId && workspaceId !== state.workspace?.id) {
+        await api.setWorkspace(workspaceId);
+      }
+      state.taskScope = visibility === "team" ? "team" : "mine";
       clearDraft(`task:${visibility}`);
     }
     state.activeForm = null;
@@ -3161,13 +3231,14 @@ async function handleTaskSubmit(event) {
 
 async function handleTaskDelete(event) {
   event.preventDefault();
-  const task = state.tasks.find((item) => item.id === event.currentTarget.dataset.taskId);
+  const taskId = event.currentTarget.dataset.taskId || state.confirmDeleteTaskId;
+  const task = state.tasks.find((item) => item.id === taskId);
   if (!task || !canDeleteTask(task)) return;
-  if (!window.confirm("업무를 삭제할까요?")) return;
   try {
     await api.deleteTask(task.id);
     state.activeTaskId = null;
     state.activeForm = null;
+    state.confirmDeleteTaskId = null;
     await refreshData();
     render();
     toast("업무를 삭제했습니다.");
