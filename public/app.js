@@ -669,20 +669,26 @@ function makeDemoApi() {
       const workspaceMembers = workspace
         ? data.members.filter((item) => item.workspace_id === workspace.id && item.status !== "disabled")
         : [];
+      const visibleTasks = data.tasks.filter((item) =>
+        (item.visibility || "team") === "team"
+        || item.creator_id === sessionUserId
+        || item.assignee_id === sessionUserId
+      );
+      const visibleTaskIds = new Set(visibleTasks.map((item) => item.id));
       return {
         noWorkspace: !workspace || !member,
         workspace,
         workspaces: visibleWorkspaces,
         allWorkspaces: data.workspaces,
         allMemberships: data.members.filter((item) => item.status !== "disabled"),
-        allTasks: data.tasks,
+        allTasks: visibleTasks,
         role: member?.role || "guest",
         members: workspaceMembers,
         invites: (data.invites || []).filter((item) => item.workspace_id === workspace?.id),
         profiles: data.users.map(({ id, email, full_name, position }) => ({ id, email, full_name, position })),
         projects: data.projects.filter((item) => item.workspace_id === workspace?.id),
-        tasks: data.tasks.filter((item) => item.workspace_id === workspace?.id),
-        comments: data.comments,
+        tasks: visibleTasks.filter((item) => item.workspace_id === workspace?.id),
+        comments: data.comments.filter((item) => visibleTaskIds.has(item.task_id)),
         notices: data.notices.filter((item) => item.workspace_id === workspace?.id),
         questions: (data.questions || []).filter((item) => item.workspace_id === workspace?.id),
         messages: (data.messages || []).filter((item) => item.workspace_id === workspace?.id)
@@ -1343,7 +1349,10 @@ async function refreshData() {
 function filteredTasks(scope = state.view, options = {}) {
   let tasks = [...state.tasks];
   if (scope === "mine") {
-    tasks = tasks.filter((task) => task.assignee_id === state.user.id || task.creator_id === state.user.id);
+    tasks = tasks.filter((task) => (task.visibility || "team") !== "team" && (task.assignee_id === state.user.id || task.creator_id === state.user.id));
+  }
+  if (scope === "team") {
+    tasks = tasks.filter((task) => (task.visibility || "team") === "team");
   }
   if (scope === "dashboard") {
     tasks = tasks.filter((task) => task.status !== "done");
@@ -1391,7 +1400,7 @@ function noticePageData() {
 }
 
 function stats() {
-  const myTasks = state.tasks.filter((task) => task.assignee_id === state.user?.id || task.creator_id === state.user?.id);
+  const myTasks = state.tasks.filter((task) => (task.visibility || "team") !== "team" && (task.assignee_id === state.user?.id || task.creator_id === state.user?.id));
   return {
     mine: myTasks.filter((task) => task.status !== "done").length,
     dueToday: state.tasks.filter((task) => task.due_date === today() && task.status !== "done").length,
@@ -1453,6 +1462,10 @@ function userMemberships(userId = state.user?.id) {
 
 function isMine(authorId) {
   return Boolean(authorId && authorId === state.user?.id);
+}
+
+function canEditTask(task) {
+  return Boolean(task && isMine(task.creator_id) && ((task.visibility || "team") !== "team" || isAdmin()));
 }
 
 function memberRole(userId) {
@@ -1662,11 +1675,11 @@ function renderHome() {
       <div class="home-left">
         <section class="home-section task-blue">
           <div class="section-title">
-            <h2>내 업무</h2>
+            <h2>개인 업무</h2>
             <button class="btn ghost" data-view="tasks" data-task-scope="mine">전체보기</button>
           </div>
           <div class="title-list">
-            ${myTasks.length ? myTasks.map(renderTitleTask).join("") : `<div class="empty small">내 미완료 업무가 없습니다.</div>`}
+            ${myTasks.length ? myTasks.map(renderTitleTask).join("") : `<div class="empty small">개인 미완료 업무가 없습니다.</div>`}
           </div>
         </section>
         <section class="home-section task-orange">
@@ -1746,7 +1759,7 @@ function renderFilters() {
 function renderTaskScopeTabs(scope) {
   return `
     <div class="task-scope-tabs" aria-label="업무 범위">
-      <button class="${scope === "mine" ? "active" : ""}" data-task-scope="mine">내 업무</button>
+      <button class="${scope === "mine" ? "active" : ""}" data-task-scope="mine">개인 업무</button>
       <button class="${scope === "team" ? "active" : ""}" data-task-scope="team">팀 업무</button>
     </div>
   `;
@@ -1757,15 +1770,19 @@ function option(value, label, current) {
 }
 
 function renderTaskList(scope = state.taskScope) {
-  const title = scope === "team" ? "팀 업무" : "내 업무";
+  const title = scope === "team" ? "팀 업무" : "개인 업무";
   const body = scope === "team"
-    ? "팀 전체 업무를 담당자, 상태, 우선순위 기준으로 훑어봅니다."
-    : "나에게 배정되었거나 내가 만든 업무를 먼저 처리합니다.";
+    ? "팀장이 공유한 팀 업무를 담당자, 상태, 우선순위 기준으로 훑어봅니다."
+    : "나만 따로 관리하는 개인 업무를 먼저 처리합니다.";
   const tasks = filteredTasks(scope);
   const boardTasks = filteredTasks(scope, { skipStatus: true });
+  const canCreateTask = scope !== "team" || isAdmin();
+  const taskAction = canCreateTask
+    ? `<button class="btn primary" data-action="open-form" data-form-kind="task">새 업무</button>`
+    : "";
   return `
     <div class="task-page ${scope === "team" ? "task-page-team" : "task-page-mine"}">
-      ${renderHead("업무", `${title}를 기준으로 업무를 정리합니다. ${body}`, `<button class="btn primary" data-action="open-form" data-form-kind="task">새 업무</button>`)}
+      ${renderHead("업무", `${title}를 기준으로 업무를 정리합니다. ${body}`, taskAction)}
       <section class="task-workspace ${scope === "team" ? "team-scope" : "mine-scope"}">
         ${renderTaskScopeTabs(scope)}
         ${renderStats()}
@@ -1782,7 +1799,7 @@ function renderTaskList(scope = state.taskScope) {
 function renderTaskCard(task) {
   const comments = state.comments.filter((comment) => comment.task_id === task.id);
   const project = state.projects.find((item) => item.id === task.project_id);
-  const editable = isMine(task.creator_id);
+  const editable = canEditTask(task);
   return `
     <article class="task-card">
       <div class="task-top">
@@ -1830,14 +1847,20 @@ function renderComment(comment) {
 function renderTaskForm() {
   const editing = state.editingTaskId ? state.tasks.find((task) => task.id === state.editingTaskId) : null;
   const draft = editing || loadDraft("task");
+  const visibility = editing ? (editing.visibility || "team") : (state.taskScope === "team" ? "team" : "private");
+  const isTeamTask = visibility === "team";
   return `
       <form class="form" data-task-form ${editing ? `data-edit-task-id="${editing.id}"` : `data-draft="task"`}>
         <input class="input" name="title" placeholder="업무 제목" value="${escapeHtml(draft.title || "")}" required>
         <textarea name="description" placeholder="업무 설명">${escapeHtml(draft.description || "")}</textarea>
         <div class="form-row">
-          <select name="assignee_id">
-            ${state.profiles.map((profile) => option(profile.id, profile.full_name || profile.email, draft.assignee_id || state.user.id)).join("")}
-          </select>
+          ${isTeamTask ? `
+            <select name="assignee_id">
+              ${state.profiles.map((profile) => option(profile.id, profile.full_name || profile.email, draft.assignee_id || state.user.id)).join("")}
+            </select>
+          ` : `
+            <input type="hidden" name="assignee_id" value="${escapeHtml(state.user.id)}">
+          `}
           <select name="priority">
             ${Object.entries(PRIORITY_LABEL).map(([value, label]) => option(value, label, draft.priority || "normal")).join("")}
           </select>
@@ -2166,7 +2189,7 @@ function renderTaskModal() {
   const task = state.tasks.find((item) => item.id === state.activeTaskId);
   if (!task) return "";
   const comments = state.comments.filter((comment) => comment.task_id === task.id);
-  const editable = isMine(task.creator_id);
+  const editable = canEditTask(task);
   return `
     <div class="modal-overlay" data-action="close-task">
       <section class="modal-card pop-card" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
@@ -2716,7 +2739,7 @@ function bindEvents() {
   document.querySelectorAll("[data-action='edit-task']").forEach((button) => {
     button.addEventListener("click", () => {
       const task = state.tasks.find((item) => item.id === button.dataset.taskId);
-      if (!task || !isMine(task.creator_id)) return;
+      if (!canEditTask(task)) return;
       state.activeTaskId = null;
       state.activeForm = "task";
       state.editingTaskId = task.id;
@@ -3047,21 +3070,26 @@ function bindAuthEvents() {
 async function handleTaskSubmit(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const editId = event.currentTarget.dataset.editTaskId;
+  const editing = editId ? state.tasks.find((item) => item.id === editId) : null;
+  const visibility = editing ? (editing.visibility || "team") : (state.taskScope === "team" ? "team" : "private");
+  if (visibility === "team" && !isAdmin()) {
+    toast("팀 업무는 팀장과 전체 관리자만 작성할 수 있습니다.");
+    return;
+  }
   const task = {
     title: form.get("title")?.toString().trim(),
     description: form.get("description")?.toString().trim(),
-    assignee_id: form.get("assignee_id")?.toString(),
+    assignee_id: visibility === "team" ? form.get("assignee_id")?.toString() : state.user.id,
     priority: form.get("priority")?.toString(),
     status: form.get("status")?.toString(),
     due_date: form.get("due_date")?.toString() || null,
     project_id: form.get("project_id")?.toString() || null,
-    visibility: "team"
+    visibility
   };
   try {
-    const editId = event.currentTarget.dataset.editTaskId;
-    const editing = editId ? state.tasks.find((item) => item.id === editId) : null;
     if (editing) {
-      if (!isMine(editing.creator_id)) return;
+      if (!canEditTask(editing)) return;
       await api.updateTask(editId, task);
       state.editingTaskId = null;
     } else {

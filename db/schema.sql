@@ -380,19 +380,32 @@ using (
   public.is_workspace_member(workspace_id)
   and (
     visibility = 'team'
-    or creator_id = auth.uid()
-    or assignee_id = auth.uid()
-    or public.is_workspace_manager(workspace_id)
+    or (
+      visibility <> 'team'
+      and (
+        creator_id = auth.uid()
+        or assignee_id = auth.uid()
+      )
+    )
   )
 );
 
 drop policy if exists "tasks create members" on public.tasks;
-create policy "tasks create members"
+drop policy if exists "tasks create scoped" on public.tasks;
+create policy "tasks create scoped"
 on public.tasks for insert
 to authenticated
 with check (
   public.is_workspace_member(workspace_id)
   and creator_id = auth.uid()
+  and (
+    visibility <> 'team'
+    or public.is_workspace_admin(workspace_id)
+  )
+  and (
+    visibility = 'team'
+    or assignee_id = auth.uid()
+  )
 );
 
 drop policy if exists "tasks update collaborators" on public.tasks;
@@ -402,9 +415,17 @@ on public.tasks for update
 to authenticated
 using (
   creator_id = auth.uid()
+  and (
+    visibility <> 'team'
+    or public.is_workspace_admin(workspace_id)
+  )
 )
 with check (
   creator_id = auth.uid()
+  and (
+    visibility <> 'team'
+    or public.is_workspace_admin(workspace_id)
+  )
 );
 
 drop policy if exists "comments read visible tasks" on public.task_comments;
@@ -418,9 +439,10 @@ using (
     where tasks.id = task_comments.task_id
       and public.is_workspace_member(tasks.workspace_id)
       and (
-        task_comments.visibility = 'team'
+        tasks.visibility = 'team'
+        or tasks.creator_id = auth.uid()
+        or tasks.assignee_id = auth.uid()
         or task_comments.author_id = auth.uid()
-        or public.is_workspace_manager(tasks.workspace_id)
       )
   )
 );
@@ -436,6 +458,11 @@ with check (
     from public.tasks
     where tasks.id = task_comments.task_id
       and public.is_workspace_member(tasks.workspace_id)
+      and (
+        tasks.visibility = 'team'
+        or tasks.creator_id = auth.uid()
+        or tasks.assignee_id = auth.uid()
+      )
   )
 );
 
