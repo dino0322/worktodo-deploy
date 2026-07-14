@@ -1543,6 +1543,15 @@ function roleBadge(role = state.role, showText = false, compact = false) {
   return `<span class="role-dot ${meta.className} ${compact ? "compact" : ""}" title="${meta.label}" aria-label="${meta.label}">${meta.icon}${showText ? `<span>${meta.label}</span>` : ""}</span>`;
 }
 
+function brandLogo() {
+  return `
+    <span class="brand-mark" aria-hidden="true">
+      <span class="brand-check"></span>
+      <span class="brand-lines"><i></i><i></i></span>
+    </span>
+  `;
+}
+
 function workspaceSelect() {
   if (!state.workspaces?.length) return `<span class="workspace-chip">${escapeHtml(state.workspace?.name || "워크스페이스")}</span>`;
   const canCreateWorkspace = isSuperAdmin();
@@ -1596,7 +1605,7 @@ function render() {
     <div class="app-shell ${state.theme === "dark" ? "dark" : "light"}">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-mark">W</div>
+          ${brandLogo()}
           <span><strong>Work To Do</strong><span>팀 업무와 개인 할 일을 한 곳에서</span></span>
         </div>
         <nav class="top-nav" aria-label="빠른 메뉴">
@@ -1644,7 +1653,7 @@ function renderNoWorkspace() {
     <main class="empty-workspace-page">
       <section class="empty-workspace-card">
         <div class="brand">
-          <div class="brand-mark">W</div>
+          ${brandLogo()}
           <span><strong>Work To Do</strong><span>${escapeHtml(profile.full_name || profile.email || "새 사용자")}</span></span>
         </div>
         <div class="guest-state">${roleBadge("guest", true)}</div>
@@ -2681,7 +2690,7 @@ function renderAuth() {
     <main class="auth-page">
       <section class="auth-card">
         <div class="brand">
-          <div class="brand-mark">W</div>
+          ${brandLogo()}
           <span><strong>Work To Do</strong></span>
         </div>
         <h1>${isSignup ? "계정 생성" : "로그인"}</h1>

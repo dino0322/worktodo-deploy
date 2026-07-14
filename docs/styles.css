@@ -95,18 +95,50 @@ button {
 }
 
 .brand-mark {
+  position: relative;
   display: grid;
-  place-items: center;
+  grid-template-columns: 15px 1fr;
+  align-items: center;
+  gap: 5px;
   width: 40px;
   height: 40px;
+  padding: 9px;
   border-radius: 8px;
-  background: var(--text);
+  background:
+    linear-gradient(135deg, var(--brand), var(--brand-2));
   color: #fff;
-  font-weight: 800;
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--brand) 24%, transparent);
 }
 
 body[data-theme="dark"] .brand-mark {
-  color: #0d1117;
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
+.brand-check {
+  width: 14px;
+  height: 9px;
+  border-left: 3px solid currentColor;
+  border-bottom: 3px solid currentColor;
+  border-radius: 1px;
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+.brand-lines {
+  display: grid;
+  gap: 5px;
+}
+
+.brand-lines i {
+  display: block;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.9;
+}
+
+.brand-lines i:last-child {
+  width: 70%;
+  opacity: 0.68;
 }
 
 body[data-theme="dark"] .btn,
