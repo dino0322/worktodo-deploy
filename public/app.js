@@ -93,6 +93,7 @@ let state = {
   profileOpen: false,
   profileEditOpen: false,
   workspaceMenuOpen: false,
+  mobileMenuOpen: false,
   adminWorkspaceId: null,
   noWorkspace: false,
   authMode: "signin",
@@ -1604,6 +1605,9 @@ function render() {
   app.innerHTML = `
     <div class="app-shell ${state.theme === "dark" ? "dark" : "light"}">
       <header class="topbar">
+        <button class="icon-button mobile-menu-toggle" data-action="toggle-mobile-menu" aria-label="메뉴 열기" aria-expanded="${state.mobileMenuOpen}">
+          <span></span><span></span><span></span>
+        </button>
         <div class="brand">
           ${brandLogo()}
           <span><strong>Work To Do</strong><span>팀 업무와 개인 할 일을 한 곳에서</span></span>
@@ -1621,7 +1625,7 @@ function render() {
         </div>
       </header>
       <div class="layout">
-        <aside class="sidebar">
+        <aside class="sidebar ${state.mobileMenuOpen ? "open" : ""}">
           ${navButton("home", "홈")}
           ${navButton("tasks", "업무")}
           ${navButton("notices", "공지")}
@@ -1633,6 +1637,7 @@ function render() {
           </div>
         </main>
       </div>
+      ${state.mobileMenuOpen ? `<button class="mobile-menu-backdrop" data-action="close-mobile-menu" aria-label="메뉴 닫기"></button>` : ""}
       ${renderNoticeModal()}
       ${renderTaskModal()}
       ${renderFormModal()}
@@ -2773,6 +2778,7 @@ function bindEvents() {
       state.view = button.dataset.view;
       if (button.dataset.taskScope) state.taskScope = button.dataset.taskScope;
       state.workspaceMenuOpen = false;
+      state.mobileMenuOpen = false;
       render();
     });
   });
@@ -2792,6 +2798,17 @@ function bindEvents() {
   });
 
   document.querySelector("[data-action='toggle-theme']")?.addEventListener("click", toggleTheme);
+
+  document.querySelector("[data-action='toggle-mobile-menu']")?.addEventListener("click", () => {
+    state.mobileMenuOpen = !state.mobileMenuOpen;
+    state.workspaceMenuOpen = false;
+    render();
+  });
+
+  document.querySelector("[data-action='close-mobile-menu']")?.addEventListener("click", () => {
+    state.mobileMenuOpen = false;
+    render();
+  });
 
   document.querySelector("[data-action='toggle-workspace-menu']")?.addEventListener("click", () => {
     state.workspaceMenuOpen = !state.workspaceMenuOpen;

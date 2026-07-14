@@ -176,6 +176,23 @@ body[data-theme="dark"] .btn.primary {
   flex-wrap: wrap;
 }
 
+.mobile-menu-toggle,
+.mobile-menu-backdrop {
+  display: none;
+}
+
+.mobile-menu-toggle {
+  flex: 0 0 auto;
+}
+
+.mobile-menu-toggle span {
+  display: block;
+  width: 17px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
 .top-nav {
   display: flex;
   align-items: center;
@@ -331,6 +348,10 @@ body[data-theme="dark"] .btn.primary {
 .icon-button:hover,
 .workspace-trigger:hover {
   border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
+}
+
+.icon-button.mobile-menu-toggle {
+  display: none;
 }
 
 .theme-toggle {
@@ -2128,8 +2149,155 @@ textarea:focus {
   }
 }
 
+@media (max-width: 900px) {
+  .app-shell {
+    background: var(--bg);
+  }
+
+  .topbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "menu brand actions"
+      "nav nav nav";
+    align-items: center;
+    justify-content: stretch;
+    gap: 6px 10px;
+    min-height: 60px;
+    padding: 6px 10px;
+  }
+
+  .icon-button.mobile-menu-toggle {
+    grid-area: menu;
+    display: inline-grid;
+    gap: 3px;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+  }
+
+  .brand {
+    grid-area: brand;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+    padding: 7px;
+  }
+
+  .brand strong {
+    font-size: 16px;
+  }
+
+  .brand span span,
+  .workspace-kicker,
+  .mode-chip,
+  .top-actions > .btn.ghost,
+  .role-chip > span:last-child {
+    display: none;
+  }
+
+  .top-nav {
+    grid-area: nav;
+    justify-content: flex-start;
+    margin-left: 44px;
+  }
+
+  .top-nav-button {
+    min-height: 28px;
+    padding: 4px 9px;
+    font-size: 13px;
+  }
+
+  .top-actions {
+    grid-area: actions;
+    margin-left: auto;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  .workspace-picker {
+    min-width: 128px;
+    width: auto;
+  }
+
+  .workspace-trigger {
+    min-height: 32px;
+    padding: 5px 28px 5px 10px;
+  }
+
+  .workspace-name {
+    max-width: 82px;
+  }
+
+  .role-chip {
+    justify-content: center;
+    gap: 0;
+    min-height: 32px;
+    width: 32px;
+    padding: 6px 8px;
+    overflow: hidden;
+  }
+
+  .icon-button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .top-actions > .btn.ghost {
+    min-height: 34px;
+    padding: 6px 9px;
+    font-size: 13px;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 86px;
+    bottom: 12px;
+    left: 12px;
+    z-index: 50;
+    display: block;
+    width: min(280px, calc(100vw - 32px));
+    height: auto;
+    padding: 14px;
+    overflow: auto;
+    border: 1px solid color-mix(in srgb, var(--brand) 16%, var(--line));
+    border-radius: 12px;
+    background:
+      linear-gradient(180deg,
+        color-mix(in srgb, var(--brand) 12%, var(--surface)) 0%,
+        color-mix(in srgb, var(--brand-2) 5%, var(--surface)) 100%);
+    box-shadow: 0 18px 50px rgba(22, 32, 46, 0.18);
+    transform: translateX(calc(-100% - 24px));
+    transition: transform 0.16s ease, opacity 0.16s ease;
+    opacity: 0;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+    opacity: 1;
+  }
+
+  .nav-button {
+    width: 100%;
+    white-space: normal;
+  }
+
+  .mobile-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    display: block;
+    border: 0;
+    background: rgba(15, 23, 42, 0.24);
+    backdrop-filter: blur(2px);
+  }
+}
+
 @media (max-width: 760px) {
-  .topbar,
   .page-head {
     align-items: stretch;
     flex-direction: column;
